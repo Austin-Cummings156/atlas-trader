@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atlas-trader"
+version = "0.1.0"
+description = "A Python market analysis and trading research system focused on swing and position trading before live automation."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "Austin Cummings" }
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "pydantic",
+    "rich",
+    "yfinance"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff"
+]
+
+[project.scripts]
+atlas-trader = "atlas_trader.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = []
