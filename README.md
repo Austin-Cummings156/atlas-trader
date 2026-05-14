@@ -19,6 +19,19 @@ AtlasTrader is intended to grow through several stages:
 9. Add alerts, reporting, and safety systems.
 10. Eventually research live automation only after the system proves itself.
 
+## Version Roadmap
+
+- v0.1 — Project setup
+- v0.2 — Candle reader
+- v0.3 — Trend, range, and consolidation detection
+- v0.4 — Support, resistance, and volume context
+- v0.5 — Multi-timeframe analysis
+- v0.6 — Fundamentals reader
+- v0.7 — Historical backtesting
+- v0.8 — Paper trading
+- v0.9 — Alerting and safety systems
+- v1.0 — Complete swing/position research bot
+
 ## First Trading Focus
 
 The first trading mode will focus on swing and position trading.
@@ -134,3 +147,50 @@ Create a virtual environment:
 
 ```bash
 python -m venv .venv
+```
+
+Activate it:
+
+```bash
+source .venv/bin/activate
+```
+
+Install the project in editable mode with development tools:
+
+```bash
+pip install -e ".[dev]"
+```
+
+Run tests:
+
+```bash
+pytest
+```
+
+Run linting:
+
+```bash
+ruff check .
+```
+
+Format code:
+
+```bash
+ruff format .
+```
+
+Run the project:
+
+```bash
+atlas-trader
+```
+
+Or:
+
+```bash
+python src/atlas_trader/main.py
+```
+
+## Disclaimer
+
+AtlasTrader is for education, research, backtesting, and paper trading. It is not financial advice. Live trading should not be attempted until the system has been thoroughly tested, reviewed, and proven in paper trading.
