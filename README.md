@@ -132,14 +132,35 @@ Future alerting may include:
 
 ## Current Status
 
-Version: 0.1.0
+Version: 0.2.0
 
 Current focus:
 
-- Project setup
-- Folder structure
-- Development tooling
-- README and GitHub initialization
+- Candle reader
+- Candle validation
+- Single-candle analysis
+- Candle sequence context
+
+### v0.2 Candle Reader
+
+The candle reader provides tested building blocks for later chart structure work.
+
+Current candle analysis supports:
+
+- OHLCV candle validation
+- Candle direction
+- Candle body, range, and wick measurements
+- Candle strength classification
+- Strong bullish and strong bearish candle classification
+- Indecision candle classification
+- Long upper and lower wick detection
+- Close position classification: near high, mid-range, or near low
+- Batch candle analysis
+- Previous-candle comparisons
+- Inside bar and outside bar detection
+- Rolling range context: wide, average, narrow, or unknown
+
+Trend detection is intentionally not part of v0.2. Higher highs, higher lows, lower highs, and lower lows for market structure will be based on swing points in v0.3.
 
 ## Development Setup
 

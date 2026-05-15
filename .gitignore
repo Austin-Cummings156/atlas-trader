@@ -28,7 +28,7 @@ dist/
 *.pem
 
 # Local data
-data/
+/data/
 *.csv
 *.parquet
 *.sqlite
