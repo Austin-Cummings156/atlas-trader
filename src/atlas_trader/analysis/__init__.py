@@ -20,8 +20,25 @@ from atlas_trader.analysis.candles import (
     is_inside_bar,
     is_outside_bar,
 )
+from atlas_trader.analysis.ranges import (
+    BreakoutDirection,
+    SidewaysMarketAnalysis,
+    SidewaysMarketType,
+    analyze_sideways_market,
+)
+from atlas_trader.analysis.trends import (
+    SwingPoint,
+    SwingPointType,
+    TrendAnalysis,
+    TrendDirection,
+    analyze_trend,
+    find_swing_highs,
+    find_swing_lows,
+    find_swing_points,
+)
 
 __all__ = [
+    "BreakoutDirection",
     "CandleClosePosition",
     "CandleContext",
     "CandleDirection",
@@ -29,11 +46,22 @@ __all__ = [
     "CandleRangeContext",
     "CandleStrength",
     "CandleType",
+    "SidewaysMarketAnalysis",
+    "SidewaysMarketType",
+    "SwingPoint",
+    "SwingPointType",
+    "TrendAnalysis",
+    "TrendDirection",
     "analyze_candle",
     "analyze_candle_contexts",
     "analyze_candles",
+    "analyze_sideways_market",
+    "analyze_trend",
     "closes_above_previous_high",
     "closes_below_previous_low",
+    "find_swing_highs",
+    "find_swing_lows",
+    "find_swing_points",
     "has_higher_high_than_previous",
     "has_higher_low_than_previous",
     "has_lower_high_than_previous",

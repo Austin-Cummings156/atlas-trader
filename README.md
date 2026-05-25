@@ -132,14 +132,15 @@ Future alerting may include:
 
 ## Current Status
 
-Version: 0.2.0
+Version: 0.3.0
 
 Current focus:
 
-- Candle reader
-- Candle validation
-- Single-candle analysis
-- Candle sequence context
+- Trend detection
+- Swing high and swing low detection
+- Trading range detection
+- Consolidation detection
+- Congestion detection
 
 ### v0.2 Candle Reader
 
@@ -160,7 +161,20 @@ Current candle analysis supports:
 - Inside bar and outside bar detection
 - Rolling range context: wide, average, narrow, or unknown
 
-Trend detection is intentionally not part of v0.2. Higher highs, higher lows, lower highs, and lower lows for market structure will be based on swing points in v0.3.
+### v0.3 Trend, Range, and Consolidation Detection
+
+The v0.3 reader adds tested structure detection on top of the candle reader.
+
+Current structure analysis supports:
+
+- Confirmed swing high and swing low detection
+- Uptrend detection from higher highs and higher lows
+- Downtrend detection from lower highs and lower lows
+- Sideways classification for mixed or weak swing structure
+- Trading range detection from repeated support and resistance touches
+- Congestion detection for tight overlapping sideways price action
+- Consolidation detection for bounded sideways pauses
+- Prior-window breakout direction checks
 
 ## Development Setup
 
