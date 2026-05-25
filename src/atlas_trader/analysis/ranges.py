@@ -7,13 +7,6 @@ from statistics import fmean
 
 from atlas_trader.data.models import Candle
 
-DEFAULT_BOUNDARY_TOLERANCE_RATIO = 0.15
-DEFAULT_MAX_SIDEWAYS_HEIGHT_PCT = 0.18
-DEFAULT_MAX_CONSOLIDATION_HEIGHT_PCT = 0.10
-DEFAULT_MAX_CONGESTION_HEIGHT_PCT = 0.04
-DEFAULT_MAX_SIDEWAYS_DRIFT_RATIO = 0.60
-DEFAULT_MIN_BOUNDARY_TOUCHES = 2
-
 
 class SidewaysMarketType(StrEnum):
     """Specific type of sideways price action."""
@@ -31,6 +24,41 @@ class BreakoutDirection(StrEnum):
     UP = "up"
     DOWN = "down"
     NONE = "none"
+
+
+@dataclass(frozen=True)
+class MarketStructureSettings:
+    """Tunable thresholds used by market-structure detection."""
+
+    boundary_tolerance_ratio: float = 0.15
+    max_sideways_height_ratio: float = 0.18
+    max_consolidation_height_ratio: float = 0.10
+    max_congestion_height_ratio: float = 0.04
+    max_close_drift_ratio: float = 0.60
+    min_boundary_touches: int = 2
+
+    def __post_init__(self) -> None:
+        """Validate threshold relationships."""
+        if self.boundary_tolerance_ratio < 0:
+            raise ValueError("boundary_tolerance_ratio cannot be negative.")
+        if self.min_boundary_touches <= 0:
+            raise ValueError("min_boundary_touches must be greater than zero.")
+        if self.max_close_drift_ratio < 0:
+            raise ValueError("max_close_drift_ratio cannot be negative.")
+        if (
+            not 0
+            < self.max_congestion_height_ratio
+            <= self.max_consolidation_height_ratio
+            <= self.max_sideways_height_ratio
+        ):
+            raise ValueError(
+                "height thresholds must satisfy 0 < congestion <= consolidation <= sideways."
+            )
+
+
+# TODO(v0.7): Move market-structure thresholds into a config object before historical backtesting.
+# Different assets and timeframes may need different sideways/congestion/consolidation limits.
+DEFAULT_MARKET_STRUCTURE_SETTINGS = MarketStructureSettings()
 
 
 @dataclass(frozen=True)
@@ -66,12 +94,7 @@ def analyze_sideways_market(
     candles: Sequence[Candle],
     *,
     lookback: int | None = None,
-    boundary_tolerance_ratio: float = DEFAULT_BOUNDARY_TOLERANCE_RATIO,
-    max_sideways_height_pct: float = DEFAULT_MAX_SIDEWAYS_HEIGHT_PCT,
-    max_consolidation_height_pct: float = DEFAULT_MAX_CONSOLIDATION_HEIGHT_PCT,
-    max_congestion_height_pct: float = DEFAULT_MAX_CONGESTION_HEIGHT_PCT,
-    max_sideways_drift_ratio: float = DEFAULT_MAX_SIDEWAYS_DRIFT_RATIO,
-    min_boundary_touches: int = DEFAULT_MIN_BOUNDARY_TOUCHES,
+    settings: MarketStructureSettings = DEFAULT_MARKET_STRUCTURE_SETTINGS,
 ) -> SidewaysMarketAnalysis:
     """Classify a candle window as trading range, consolidation, congestion, or directional.
 
@@ -80,15 +103,7 @@ def analyze_sideways_market(
     - congestion: a very tight overlapping band with limited close-to-close drift
     - consolidation: a bounded sideways pause that is wider than congestion and lacks range touches
     """
-    _validate_inputs(
-        lookback=lookback,
-        boundary_tolerance_ratio=boundary_tolerance_ratio,
-        max_sideways_height_pct=max_sideways_height_pct,
-        max_consolidation_height_pct=max_consolidation_height_pct,
-        max_congestion_height_pct=max_congestion_height_pct,
-        max_sideways_drift_ratio=max_sideways_drift_ratio,
-        min_boundary_touches=min_boundary_touches,
-    )
+    _validate_lookback(lookback)
 
     window = list(candles[-lookback:] if lookback is not None else candles)
     if len(window) < 2:
@@ -109,7 +124,7 @@ def analyze_sideways_market(
     average_candle_range = fmean(candle_ranges)
     average_candle_range_pct = average_candle_range / midpoint
 
-    tolerance = height * boundary_tolerance_ratio
+    tolerance = height * settings.boundary_tolerance_ratio
     support_touches = sum(candle.low <= lower_bound + tolerance for candle in window)
     resistance_touches = sum(candle.high >= upper_bound - tolerance for candle in window)
     breakout_direction = _classify_breakout(window, tolerance)
@@ -120,11 +135,7 @@ def analyze_sideways_market(
         support_touches=support_touches,
         resistance_touches=resistance_touches,
         average_candle_range_pct=average_candle_range_pct,
-        max_sideways_height_pct=max_sideways_height_pct,
-        max_consolidation_height_pct=max_consolidation_height_pct,
-        max_congestion_height_pct=max_congestion_height_pct,
-        max_sideways_drift_ratio=max_sideways_drift_ratio,
-        min_boundary_touches=min_boundary_touches,
+        settings=settings,
     )
 
     return SidewaysMarketAnalysis(
@@ -147,35 +158,14 @@ def analyze_sideways_market(
             close_drift_ratio=close_drift_ratio,
             support_touches=support_touches,
             resistance_touches=resistance_touches,
-            max_sideways_height_pct=max_sideways_height_pct,
-            max_sideways_drift_ratio=max_sideways_drift_ratio,
-            min_boundary_touches=min_boundary_touches,
+            settings=settings,
         ),
     )
 
 
-def _validate_inputs(
-    *,
-    lookback: int | None,
-    boundary_tolerance_ratio: float,
-    max_sideways_height_pct: float,
-    max_consolidation_height_pct: float,
-    max_congestion_height_pct: float,
-    max_sideways_drift_ratio: float,
-    min_boundary_touches: int,
-) -> None:
+def _validate_lookback(lookback: int | None) -> None:
     if lookback is not None and lookback <= 1:
         raise ValueError("lookback must be greater than one.")
-    if boundary_tolerance_ratio < 0:
-        raise ValueError("boundary_tolerance_ratio cannot be negative.")
-    if min_boundary_touches <= 0:
-        raise ValueError("min_boundary_touches must be greater than zero.")
-    if max_sideways_drift_ratio < 0:
-        raise ValueError("max_sideways_drift_ratio cannot be negative.")
-    if not 0 < max_congestion_height_pct <= max_consolidation_height_pct <= max_sideways_height_pct:
-        raise ValueError(
-            "height thresholds must satisfy 0 < congestion <= consolidation <= sideways."
-        )
 
 
 def _unknown_analysis() -> SidewaysMarketAnalysis:
@@ -222,28 +212,28 @@ def _classify_sideways_type(
     support_touches: int,
     resistance_touches: int,
     average_candle_range_pct: float,
-    max_sideways_height_pct: float,
-    max_consolidation_height_pct: float,
-    max_congestion_height_pct: float,
-    max_sideways_drift_ratio: float,
-    min_boundary_touches: int,
+    settings: MarketStructureSettings,
 ) -> SidewaysMarketType:
-    if height_pct > max_sideways_height_pct or close_drift_ratio > max_sideways_drift_ratio:
+    if (
+        height_pct > settings.max_sideways_height_ratio
+        or close_drift_ratio > settings.max_close_drift_ratio
+    ):
         return SidewaysMarketType.NOT_SIDEWAYS
 
     has_range_touches = (
-        support_touches >= min_boundary_touches and resistance_touches >= min_boundary_touches
+        support_touches >= settings.min_boundary_touches
+        and resistance_touches >= settings.min_boundary_touches
     )
     if (
-        height_pct <= max_congestion_height_pct
-        and average_candle_range_pct <= max_congestion_height_pct / 2
+        height_pct <= settings.max_congestion_height_ratio
+        and average_candle_range_pct <= settings.max_congestion_height_ratio / 2
     ):
         return SidewaysMarketType.CONGESTION
 
     if has_range_touches:
         return SidewaysMarketType.TRADING_RANGE
 
-    if height_pct <= max_consolidation_height_pct:
+    if height_pct <= settings.max_consolidation_height_ratio:
         return SidewaysMarketType.CONSOLIDATION
 
     return SidewaysMarketType.NOT_SIDEWAYS
@@ -256,16 +246,14 @@ def _confidence_for(
     close_drift_ratio: float,
     support_touches: int,
     resistance_touches: int,
-    max_sideways_height_pct: float,
-    max_sideways_drift_ratio: float,
-    min_boundary_touches: int,
+    settings: MarketStructureSettings,
 ) -> float:
     if market_type in {SidewaysMarketType.UNKNOWN, SidewaysMarketType.NOT_SIDEWAYS}:
         return 0
 
-    height_score = max(0.0, 1 - height_pct / max_sideways_height_pct)
-    drift_score = max(0.0, 1 - close_drift_ratio / max_sideways_drift_ratio)
-    touch_score = min(support_touches, resistance_touches) / min_boundary_touches
+    height_score = max(0.0, 1 - height_pct / settings.max_sideways_height_ratio)
+    drift_score = max(0.0, 1 - close_drift_ratio / settings.max_close_drift_ratio)
+    touch_score = min(support_touches, resistance_touches) / settings.min_boundary_touches
     touch_score = min(touch_score, 1.0)
 
     if market_type == SidewaysMarketType.TRADING_RANGE:

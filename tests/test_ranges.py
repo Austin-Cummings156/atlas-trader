@@ -7,6 +7,7 @@ import pytest
 import atlas_trader.analysis as analysis_api
 from atlas_trader.analysis.ranges import (
     BreakoutDirection,
+    MarketStructureSettings,
     SidewaysMarketType,
     analyze_sideways_market,
 )
@@ -33,6 +34,7 @@ def make_candle(
 
 
 def test_sideways_api_is_exposed_from_analysis_package() -> None:
+    assert analysis_api.MarketStructureSettings is MarketStructureSettings
     assert analysis_api.SidewaysMarketAnalysis is not None
     assert analysis_api.analyze_sideways_market is analyze_sideways_market
 
@@ -68,7 +70,9 @@ def test_detects_congestion_as_tight_overlapping_sideways_band() -> None:
         make_candle(4, open=100.2, high=101.3, low=100.1, close=100.6),
     ]
 
-    analysis = analyze_sideways_market(candles, min_boundary_touches=4)
+    settings = MarketStructureSettings(min_boundary_touches=4)
+
+    analysis = analyze_sideways_market(candles, settings=settings)
 
     assert analysis.market_type == SidewaysMarketType.CONGESTION
     assert analysis.is_sideways
@@ -85,7 +89,9 @@ def test_detects_consolidation_as_bounded_pause_without_range_touches() -> None:
         make_candle(4, open=101, high=104, low=100, close=102),
     ]
 
-    analysis = analyze_sideways_market(candles, min_boundary_touches=4)
+    settings = MarketStructureSettings(min_boundary_touches=4)
+
+    analysis = analyze_sideways_market(candles, settings=settings)
 
     assert analysis.market_type == SidewaysMarketType.CONSOLIDATION
     assert analysis.is_sideways
@@ -120,7 +126,9 @@ def test_analyze_sideways_market_uses_lookback_window() -> None:
         make_candle(6, open=101, high=104, low=100, close=102),
     ]
 
-    analysis = analyze_sideways_market(candles, lookback=5, min_boundary_touches=4)
+    settings = MarketStructureSettings(min_boundary_touches=4)
+
+    analysis = analyze_sideways_market(candles, lookback=5, settings=settings)
 
     assert analysis.market_type == SidewaysMarketType.CONSOLIDATION
     assert analysis.lower_bound == 99
@@ -140,14 +148,32 @@ def test_analyze_sideways_market_rejects_invalid_inputs() -> None:
         analyze_sideways_market([], lookback=1)
 
     with pytest.raises(ValueError, match="boundary_tolerance_ratio"):
-        analyze_sideways_market([], boundary_tolerance_ratio=-0.1)
+        MarketStructureSettings(boundary_tolerance_ratio=-0.1)
 
     with pytest.raises(ValueError, match="min_boundary_touches"):
-        analyze_sideways_market([], min_boundary_touches=0)
+        MarketStructureSettings(min_boundary_touches=0)
 
     with pytest.raises(ValueError, match="height thresholds"):
-        analyze_sideways_market(
-            [],
-            max_sideways_height_pct=0.05,
-            max_consolidation_height_pct=0.10,
+        MarketStructureSettings(
+            max_sideways_height_ratio=0.05,
+            max_consolidation_height_ratio=0.10,
         )
+
+
+def test_analyze_sideways_market_accepts_custom_settings() -> None:
+    candles = [
+        make_candle(0, open=100, high=104, low=99, close=102),
+        make_candle(1, open=102, high=105, low=101, close=103),
+        make_candle(2, open=103, high=106, low=102, close=104),
+        make_candle(3, open=104, high=105, low=100, close=101),
+        make_candle(4, open=101, high=104, low=100, close=102),
+    ]
+    strict_settings = MarketStructureSettings(
+        max_congestion_height_ratio=0.005,
+        max_consolidation_height_ratio=0.01,
+        min_boundary_touches=4,
+    )
+
+    analysis = analyze_sideways_market(candles, settings=strict_settings)
+
+    assert analysis.market_type == SidewaysMarketType.NOT_SIDEWAYS

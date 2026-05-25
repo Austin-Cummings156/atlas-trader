@@ -22,6 +22,7 @@ from atlas_trader.analysis.candles import (
 )
 from atlas_trader.analysis.ranges import (
     BreakoutDirection,
+    MarketStructureSettings,
     SidewaysMarketAnalysis,
     SidewaysMarketType,
     analyze_sideways_market,
@@ -46,6 +47,7 @@ __all__ = [
     "CandleRangeContext",
     "CandleStrength",
     "CandleType",
+    "MarketStructureSettings",
     "SidewaysMarketAnalysis",
     "SidewaysMarketType",
     "SwingPoint",
