@@ -136,15 +136,15 @@ Future alerting may include:
 
 ## Current Status
 
-Version: 0.3.0
+Version: 0.4.0
 
 Current focus:
 
-- Trend detection
-- Swing high and swing low detection
-- Trading range detection
-- Consolidation detection
-- Congestion detection
+- Support and resistance detection
+- Volume average and relative volume context
+- Rising and falling volume classification
+- Breakout volume confirmation
+- Moving average context for level analysis
 
 ### v0.2 Candle Reader
 
@@ -180,6 +180,22 @@ Current structure analysis supports:
 - Consolidation detection for bounded sideways pauses
 - Prior-window breakout direction checks
 - Immutable candle, trend, and range settings objects for tuning analysis thresholds
+
+### v0.4 Support, Resistance, and Volume Context
+
+The v0.4 reader adds level detection and volume context for judging price action around
+important zones.
+
+Current support/resistance and volume analysis supports:
+
+- Support and resistance detection from clustered swing lows and highs
+- Nearest support and nearest resistance lookup around the latest close
+- Level touch counts, price zones, distance from close, and confidence scores
+- Simple moving average helpers for close-price context
+- Rolling volume average
+- Relative volume classification: high, average, low, or unknown
+- Volume trend classification: rising, falling, flat, mixed, or unknown
+- Breakout volume context: confirmed, weak, absent, or unknown
 
 ## Development Setup
 
