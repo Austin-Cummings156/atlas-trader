@@ -1,8 +1,10 @@
 # AtlasTrader
 
-AtlasTrader is a Python market analysis and trading research system focused first on swing and position trading.
+AtlasTrader is a Python market analysis and trading research system focused first on swing and position trading, not day trading.
 
 The project starts as a market reader, not an automated trading bot. The first goal is to understand price action, trend structure, volume behavior, higher-timeframe context, and eventually fundamental data before any trade execution is considered.
+
+The initial trading focus is intentionally slower and more forgiving. Swing and position trading should require less constant screen-watching than day trading, while still building chart-reading logic that may later be useful for shorter-term systems.
 
 ## Project Goals
 
@@ -34,9 +36,11 @@ AtlasTrader is intended to grow through several stages:
 
 ## First Trading Focus
 
-The first trading mode will focus on swing and position trading.
+The first trading mode will focus on swing and position trading. Day trading is not the initial target.
 
 This means AtlasTrader will eventually look for trades that may last from several days to several months, usually with the goal of following larger market trends instead of reacting to short-term noise.
+
+The same candle, trend, range, support, resistance, and volume logic may eventually help with day-trading research, but that comes later. The first priority is building a system around more forgiving setups that do not require constant monitoring.
 
 Initial timeframes of interest:
 
@@ -175,6 +179,7 @@ Current structure analysis supports:
 - Congestion detection for tight overlapping sideways price action
 - Consolidation detection for bounded sideways pauses
 - Prior-window breakout direction checks
+- Immutable candle, trend, and range settings objects for tuning analysis thresholds
 
 ## Development Setup
 

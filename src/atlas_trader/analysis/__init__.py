@@ -1,6 +1,7 @@
 """Market analysis helpers."""
 
 from atlas_trader.analysis.candles import (
+    CandleAnalysisSettings,
     CandleClosePosition,
     CandleContext,
     CandleDirection,
@@ -31,6 +32,7 @@ from atlas_trader.analysis.trends import (
     SwingPoint,
     SwingPointType,
     TrendAnalysis,
+    TrendAnalysisSettings,
     TrendDirection,
     analyze_trend,
     find_swing_highs,
@@ -40,6 +42,7 @@ from atlas_trader.analysis.trends import (
 
 __all__ = [
     "BreakoutDirection",
+    "CandleAnalysisSettings",
     "CandleClosePosition",
     "CandleContext",
     "CandleDirection",
@@ -53,6 +56,7 @@ __all__ = [
     "SwingPoint",
     "SwingPointType",
     "TrendAnalysis",
+    "TrendAnalysisSettings",
     "TrendDirection",
     "analyze_candle",
     "analyze_candle_contexts",

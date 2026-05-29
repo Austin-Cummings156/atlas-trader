@@ -7,16 +7,6 @@ from statistics import fmean
 
 from atlas_trader.data.models import Candle
 
-INDECISION_BODY_RATIO = 0.1
-MODERATE_BODY_RATIO = 0.4
-STRONG_BODY_RATIO = 0.7
-LONG_WICK_RATIO = 0.5
-CLOSE_NEAR_LOW_RATIO = 0.25
-CLOSE_NEAR_HIGH_RATIO = 0.75
-NARROW_RANGE_RATIO = 0.75
-WIDE_RANGE_RATIO = 1.5
-DEFAULT_AVERAGE_RANGE_PERIOD = 20
-
 
 class CandleDirection(StrEnum):
     """Basic candle direction."""
@@ -64,6 +54,52 @@ class CandleRangeContext(StrEnum):
 
 
 @dataclass(frozen=True)
+class CandleAnalysisSettings:
+    """Tunable thresholds used by candle analysis."""
+
+    indecision_body_ratio: float = 0.10
+    moderate_body_ratio: float = 0.40
+    strong_body_ratio: float = 0.70
+    long_wick_ratio: float = 0.50
+    close_near_low_ratio: float = 0.25
+    close_near_high_ratio: float = 0.75
+    narrow_range_ratio: float = 0.75
+    wide_range_ratio: float = 1.50
+    default_range_period: int = 20
+
+    def __post_init__(self) -> None:
+        """Validate threshold relationships."""
+        if self.default_range_period <= 0:
+            raise ValueError("default_range_period must be greater than zero.")
+        if (
+            not 0
+            <= self.indecision_body_ratio
+            <= self.moderate_body_ratio
+            <= self.strong_body_ratio
+            <= 1
+        ):
+            raise ValueError(
+                "body thresholds must satisfy "
+                "0 <= indecision <= moderate <= strong <= 1."
+            )
+        if not 0 <= self.long_wick_ratio <= 1:
+            raise ValueError("long_wick_ratio must be between zero and one.")
+        if not 0 <= self.close_near_low_ratio <= self.close_near_high_ratio <= 1:
+            raise ValueError(
+                "close position thresholds must satisfy "
+                "0 <= close_near_low <= close_near_high <= 1."
+            )
+        if not 0 < self.narrow_range_ratio <= self.wide_range_ratio:
+            raise ValueError(
+                "range thresholds must satisfy 0 < narrow_range_ratio <= wide_range_ratio."
+            )
+
+
+# TODO(v0.7): Move candle-analysis thresholds into a shared analysis config object.
+DEFAULT_CANDLE_ANALYSIS_SETTINGS = CandleAnalysisSettings()
+
+
+@dataclass(frozen=True)
 class CandleMetrics:
     """Calculated candle measurements."""
 
@@ -101,7 +137,11 @@ class CandleContext:
     is_outside_bar: bool
 
 
-def analyze_candle(candle: Candle) -> CandleMetrics:
+def analyze_candle(
+    candle: Candle,
+    *,
+    settings: CandleAnalysisSettings = DEFAULT_CANDLE_ANALYSIS_SETTINGS,
+) -> CandleMetrics:
     """Analyze one candle and return its calculated structure."""
     full_range = candle.high - candle.low
 
@@ -134,12 +174,13 @@ def analyze_candle(candle: Candle) -> CandleMetrics:
     close_position_ratio = (candle.close - candle.low) / full_range
 
     direction = _classify_direction(candle)
-    strength = _classify_strength(body_to_range_ratio)
+    strength = _classify_strength(body_to_range_ratio, settings)
     candle_type = _classify_type(
         direction=direction,
         strength=strength,
         upper_wick_to_range_ratio=upper_wick_to_range_ratio,
         lower_wick_to_range_ratio=lower_wick_to_range_ratio,
+        settings=settings,
     )
 
     return CandleMetrics(
@@ -154,20 +195,29 @@ def analyze_candle(candle: Candle) -> CandleMetrics:
         upper_wick_to_range_ratio=upper_wick_to_range_ratio,
         lower_wick_to_range_ratio=lower_wick_to_range_ratio,
         close_position_ratio=close_position_ratio,
-        close_position=_classify_close_position(close_position_ratio),
+        close_position=_classify_close_position(close_position_ratio, settings),
     )
 
 
-def analyze_candles(candles: Sequence[Candle]) -> list[CandleMetrics]:
+def analyze_candles(
+    candles: Sequence[Candle],
+    *,
+    settings: CandleAnalysisSettings = DEFAULT_CANDLE_ANALYSIS_SETTINGS,
+) -> list[CandleMetrics]:
     """Analyze a sequence of candles without adding cross-candle context."""
-    return [analyze_candle(candle) for candle in candles]
+    return [analyze_candle(candle, settings=settings) for candle in candles]
 
 
 def analyze_candle_contexts(
     candles: Sequence[Candle],
-    average_range_period: int = DEFAULT_AVERAGE_RANGE_PERIOD,
+    average_range_period: int | None = None,
+    *,
+    settings: CandleAnalysisSettings = DEFAULT_CANDLE_ANALYSIS_SETTINGS,
 ) -> list[CandleContext]:
     """Analyze candles with previous-candle and rolling range context."""
+    average_range_period = (
+        settings.default_range_period if average_range_period is None else average_range_period
+    )
     if average_range_period <= 0:
         raise ValueError("average_range_period must be greater than zero.")
 
@@ -176,7 +226,7 @@ def analyze_candle_contexts(
 
     for index, candle in enumerate(candles):
         previous_candle = candles[index - 1] if index > 0 else None
-        metrics = analyze_candle(candle)
+        metrics = analyze_candle(candle, settings=settings)
         average_range = _average_recent_range(ranges, average_range_period)
         range_vs_average_ratio = (
             metrics.full_range / average_range if average_range and average_range > 0 else None
@@ -189,7 +239,7 @@ def analyze_candle_contexts(
                 previous_candle=previous_candle,
                 average_range=average_range,
                 range_vs_average_ratio=range_vs_average_ratio,
-                range_context=_classify_range_context(range_vs_average_ratio),
+                range_context=_classify_range_context(range_vs_average_ratio, settings),
                 has_higher_high_than_previous=has_higher_high_than_previous(
                     candle,
                     previous_candle,
@@ -275,37 +325,46 @@ def _classify_direction(candle: Candle) -> CandleDirection:
     return CandleDirection.NEUTRAL
 
 
-def _classify_strength(body_to_range_ratio: float) -> CandleStrength:
-    if body_to_range_ratio <= INDECISION_BODY_RATIO:
+def _classify_strength(
+    body_to_range_ratio: float,
+    settings: CandleAnalysisSettings,
+) -> CandleStrength:
+    if body_to_range_ratio <= settings.indecision_body_ratio:
         return CandleStrength.INDECISION
 
-    if body_to_range_ratio >= STRONG_BODY_RATIO:
+    if body_to_range_ratio >= settings.strong_body_ratio:
         return CandleStrength.STRONG
 
-    if body_to_range_ratio >= MODERATE_BODY_RATIO:
+    if body_to_range_ratio >= settings.moderate_body_ratio:
         return CandleStrength.MODERATE
 
     return CandleStrength.WEAK
 
 
-def _classify_close_position(close_position_ratio: float) -> CandleClosePosition:
-    if close_position_ratio >= CLOSE_NEAR_HIGH_RATIO:
+def _classify_close_position(
+    close_position_ratio: float,
+    settings: CandleAnalysisSettings,
+) -> CandleClosePosition:
+    if close_position_ratio >= settings.close_near_high_ratio:
         return CandleClosePosition.NEAR_HIGH
 
-    if close_position_ratio <= CLOSE_NEAR_LOW_RATIO:
+    if close_position_ratio <= settings.close_near_low_ratio:
         return CandleClosePosition.NEAR_LOW
 
     return CandleClosePosition.MID_RANGE
 
 
-def _classify_range_context(range_vs_average_ratio: float | None) -> CandleRangeContext:
+def _classify_range_context(
+    range_vs_average_ratio: float | None,
+    settings: CandleAnalysisSettings,
+) -> CandleRangeContext:
     if range_vs_average_ratio is None:
         return CandleRangeContext.UNKNOWN
 
-    if range_vs_average_ratio >= WIDE_RANGE_RATIO:
+    if range_vs_average_ratio >= settings.wide_range_ratio:
         return CandleRangeContext.WIDE
 
-    if range_vs_average_ratio <= NARROW_RANGE_RATIO:
+    if range_vs_average_ratio <= settings.narrow_range_ratio:
         return CandleRangeContext.NARROW
 
     return CandleRangeContext.AVERAGE
@@ -323,14 +382,15 @@ def _classify_type(
     strength: CandleStrength,
     upper_wick_to_range_ratio: float,
     lower_wick_to_range_ratio: float,
+    settings: CandleAnalysisSettings,
 ) -> CandleType:
     if strength == CandleStrength.INDECISION:
         return CandleType.INDECISION
 
-    if upper_wick_to_range_ratio >= LONG_WICK_RATIO:
+    if upper_wick_to_range_ratio >= settings.long_wick_ratio:
         return CandleType.LONG_UPPER_WICK
 
-    if lower_wick_to_range_ratio >= LONG_WICK_RATIO:
+    if lower_wick_to_range_ratio >= settings.long_wick_ratio:
         return CandleType.LONG_LOWER_WICK
 
     if direction == CandleDirection.BULLISH and strength == CandleStrength.STRONG:

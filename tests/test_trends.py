@@ -7,6 +7,7 @@ import pytest
 import atlas_trader.analysis as analysis_api
 from atlas_trader.analysis.trends import (
     SwingPointType,
+    TrendAnalysisSettings,
     TrendDirection,
     analyze_trend,
     find_swing_highs,
@@ -31,6 +32,7 @@ def make_candle(index: int, *, high: float, low: float, close: float | None = No
 
 def test_trend_api_is_exposed_from_analysis_package() -> None:
     assert analysis_api.TrendAnalysis is not None
+    assert analysis_api.TrendAnalysisSettings is TrendAnalysisSettings
     assert analysis_api.analyze_trend is analyze_trend
 
 
@@ -139,6 +141,23 @@ def test_find_swing_helpers_filter_by_type() -> None:
     ]
 
 
+def test_trend_helpers_use_custom_settings() -> None:
+    candles = [
+        make_candle(0, high=10, low=7),
+        make_candle(1, high=14, low=10),
+        make_candle(2, high=11, low=9),
+        make_candle(3, high=16, low=12),
+        make_candle(4, high=13, low=10.5),
+        make_candle(5, high=18, low=13),
+        make_candle(6, high=15, low=13),
+    ]
+    settings = TrendAnalysisSettings(default_swing_strength=1)
+
+    trend = analyze_trend(candles, settings=settings)
+
+    assert trend.direction == TrendDirection.UPTREND
+
+
 def test_analyze_trend_rejects_invalid_inputs() -> None:
     with pytest.raises(ValueError, match="strength"):
         analyze_trend([], strength=0)
@@ -148,3 +167,8 @@ def test_analyze_trend_rejects_invalid_inputs() -> None:
 
     with pytest.raises(ValueError, match="min_trend_confidence"):
         analyze_trend([], min_trend_confidence=2)
+
+
+def test_trend_analysis_settings_reject_invalid_values() -> None:
+    with pytest.raises(ValueError, match="default_swing_strength"):
+        TrendAnalysisSettings(default_swing_strength=0)

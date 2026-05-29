@@ -6,10 +6,6 @@ from enum import StrEnum
 
 from atlas_trader.data.models import Candle
 
-DEFAULT_SWING_STRENGTH = 2
-DEFAULT_MIN_SWING_PAIRS = 2
-DEFAULT_MIN_TREND_CONFIDENCE = 0.75
-
 
 class SwingPointType(StrEnum):
     """Type of local price extreme."""
@@ -25,6 +21,28 @@ class TrendDirection(StrEnum):
     DOWNTREND = "downtrend"
     SIDEWAYS = "sideways"
     UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class TrendAnalysisSettings:
+    """Tunable thresholds used by trend analysis."""
+
+    default_swing_strength: int = 2
+    min_swing_pairs: int = 2
+    min_trend_confidence: float = 0.75
+
+    def __post_init__(self) -> None:
+        """Validate trend-analysis settings."""
+        if self.default_swing_strength <= 0:
+            raise ValueError("default_swing_strength must be greater than zero.")
+        if self.min_swing_pairs <= 0:
+            raise ValueError("min_swing_pairs must be greater than zero.")
+        if not 0 <= self.min_trend_confidence <= 1:
+            raise ValueError("min_trend_confidence must be between zero and one.")
+
+
+# TODO(v0.7): Move trend-analysis thresholds into a shared analysis config object.
+DEFAULT_TREND_ANALYSIS_SETTINGS = TrendAnalysisSettings()
 
 
 @dataclass(frozen=True)
@@ -65,7 +83,9 @@ class TrendAnalysis:
 
 def find_swing_points(
     candles: Sequence[Candle],
-    strength: int = DEFAULT_SWING_STRENGTH,
+    strength: int | None = None,
+    *,
+    settings: TrendAnalysisSettings = DEFAULT_TREND_ANALYSIS_SETTINGS,
 ) -> list[SwingPoint]:
     """Find confirmed swing highs and lows.
 
@@ -73,7 +93,7 @@ def find_swing_points(
     Equal highs/lows are intentionally ignored because they describe range boundaries better
     than clean trend structure.
     """
-    _validate_strength(strength)
+    strength = _resolve_strength(strength, settings)
 
     swing_points: list[SwingPoint] = []
     if len(candles) < strength * 2 + 1:
@@ -108,42 +128,54 @@ def find_swing_points(
 
 def find_swing_highs(
     candles: Sequence[Candle],
-    strength: int = DEFAULT_SWING_STRENGTH,
+    strength: int | None = None,
+    *,
+    settings: TrendAnalysisSettings = DEFAULT_TREND_ANALYSIS_SETTINGS,
 ) -> list[SwingPoint]:
     """Find confirmed swing highs."""
     return [
         point
-        for point in find_swing_points(candles, strength)
+        for point in find_swing_points(candles, strength, settings=settings)
         if point.point_type == SwingPointType.HIGH
     ]
 
 
 def find_swing_lows(
     candles: Sequence[Candle],
-    strength: int = DEFAULT_SWING_STRENGTH,
+    strength: int | None = None,
+    *,
+    settings: TrendAnalysisSettings = DEFAULT_TREND_ANALYSIS_SETTINGS,
 ) -> list[SwingPoint]:
     """Find confirmed swing lows."""
     return [
         point
-        for point in find_swing_points(candles, strength)
+        for point in find_swing_points(candles, strength, settings=settings)
         if point.point_type == SwingPointType.LOW
     ]
 
 
 def analyze_trend(
     candles: Sequence[Candle],
-    strength: int = DEFAULT_SWING_STRENGTH,
-    min_swing_pairs: int = DEFAULT_MIN_SWING_PAIRS,
-    min_trend_confidence: float = DEFAULT_MIN_TREND_CONFIDENCE,
+    strength: int | None = None,
+    min_swing_pairs: int | None = None,
+    min_trend_confidence: float | None = None,
+    *,
+    settings: TrendAnalysisSettings = DEFAULT_TREND_ANALYSIS_SETTINGS,
 ) -> TrendAnalysis:
     """Analyze trend direction from higher-high/higher-low or lower-high/lower-low structure."""
-    _validate_strength(strength)
-    if min_swing_pairs <= 0:
-        raise ValueError("min_swing_pairs must be greater than zero.")
-    if not 0 <= min_trend_confidence <= 1:
-        raise ValueError("min_trend_confidence must be between zero and one.")
+    strength = _resolve_strength(strength, settings)
+    min_swing_pairs = (
+        settings.min_swing_pairs if min_swing_pairs is None else min_swing_pairs
+    )
+    min_trend_confidence = (
+        settings.min_trend_confidence
+        if min_trend_confidence is None
+        else min_trend_confidence
+    )
+    _validate_min_swing_pairs(min_swing_pairs)
+    _validate_min_trend_confidence(min_trend_confidence)
 
-    swing_points = find_swing_points(candles, strength)
+    swing_points = find_swing_points(candles, strength, settings=settings)
     swing_highs = [point for point in swing_points if point.point_type == SwingPointType.HIGH]
     swing_lows = [point for point in swing_points if point.point_type == SwingPointType.LOW]
 
@@ -176,6 +208,22 @@ def analyze_trend(
 def _validate_strength(strength: int) -> None:
     if strength <= 0:
         raise ValueError("strength must be greater than zero.")
+
+
+def _resolve_strength(strength: int | None, settings: TrendAnalysisSettings) -> int:
+    resolved_strength = settings.default_swing_strength if strength is None else strength
+    _validate_strength(resolved_strength)
+    return resolved_strength
+
+
+def _validate_min_swing_pairs(min_swing_pairs: int) -> None:
+    if min_swing_pairs <= 0:
+        raise ValueError("min_swing_pairs must be greater than zero.")
+
+
+def _validate_min_trend_confidence(min_trend_confidence: float) -> None:
+    if not 0 <= min_trend_confidence <= 1:
+        raise ValueError("min_trend_confidence must be between zero and one.")
 
 
 def _count_swing_progression(points: Sequence[SwingPoint]) -> tuple[int, int, int]:

@@ -6,6 +6,7 @@ import pytest
 
 import atlas_trader.analysis as analysis_api
 from atlas_trader.analysis.candles import (
+    CandleAnalysisSettings,
     CandleClosePosition,
     CandleDirection,
     CandleRangeContext,
@@ -27,6 +28,7 @@ from atlas_trader.data.models import Candle
 
 
 def test_candle_api_is_exposed_from_analysis_package() -> None:
+    assert analysis_api.CandleAnalysisSettings is CandleAnalysisSettings
     assert analysis_api.CandleMetrics is not None
     assert analysis_api.analyze_candle is analyze_candle
 
@@ -135,6 +137,15 @@ def test_analyze_strength_thresholds(
     assert metrics.strength == expected_strength
 
 
+def test_analyze_candle_uses_custom_settings() -> None:
+    candle = make_candle(open=100, high=200, low=100, close=150)
+    settings = CandleAnalysisSettings(strong_body_ratio=0.50)
+
+    metrics = analyze_candle(candle, settings=settings)
+
+    assert metrics.strength == CandleStrength.STRONG
+
+
 def test_analyze_standard_moderate_candle() -> None:
     candle = make_candle(open=100, high=160, low=80, close=140)
 
@@ -238,6 +249,19 @@ def test_analyze_candle_contexts_uses_prior_candles_for_range_context() -> None:
     assert contexts[3].range_context == CandleRangeContext.NARROW
 
 
+def test_analyze_candle_contexts_uses_settings_default_range_period() -> None:
+    candles = [
+        make_candle(open=100, high=110, low=100, close=105),
+        make_candle(open=105, high=125, low=105, close=115),
+        make_candle(open=115, high=140, low=115, close=130),
+    ]
+    settings = CandleAnalysisSettings(default_range_period=1)
+
+    contexts = analyze_candle_contexts(candles, settings=settings)
+
+    assert contexts[2].average_range == 20
+
+
 def test_analyze_candle_contexts_adds_previous_candle_flags() -> None:
     candles = [
         make_candle(open=100, high=110, low=90, close=105),
@@ -255,6 +279,11 @@ def test_analyze_candle_contexts_adds_previous_candle_flags() -> None:
 def test_analyze_candle_contexts_rejects_invalid_average_period() -> None:
     with pytest.raises(ValueError, match="average_range_period"):
         analyze_candle_contexts([], average_range_period=0)
+
+
+def test_candle_analysis_settings_reject_invalid_thresholds() -> None:
+    with pytest.raises(ValueError, match="body thresholds"):
+        CandleAnalysisSettings(indecision_body_ratio=0.5, moderate_body_ratio=0.4)
 
 
 def test_candle_rejects_invalid_high_low_range() -> None:
