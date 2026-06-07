@@ -136,15 +136,15 @@ Future alerting may include:
 
 ## Current Status
 
-Version: 0.6.0
+Version: 0.7.0 in progress
 
 Current focus:
 
-- Fundamental analysis for swing and position research
-- Growth, performance, valuation, earnings, debt, and profitability classification
-- Overall fundamental score and rating
-- Partial-data handling for incomplete company metrics
-- Tunable fundamental-analysis thresholds
+- Historical market-reading validation before paper trading
+- Rolling-window reads over historical candles
+- Trend, range, support/resistance, volume, breakout, and bias summaries
+- Deterministic synthetic tests for reader behavior
+- Optional real-symbol historical read-through script
 
 ### v0.2 Candle Reader
 
@@ -231,6 +231,26 @@ Current fundamental analysis supports:
 - Overall score, data-quality ratio, and rating: strong, positive, neutral, weak,
   or unknown
 - Immutable settings object for tuning fundamental thresholds
+
+### v0.7 Historical Market-Reading Validation
+
+The in-progress v0.7 reader starts historical testing as market-reading validation, not full
+profit/loss backtesting. It walks historical candles chronologically and runs the
+current readers over rolling windows to check whether AtlasTrader can describe market
+structure coherently before paper trading is added.
+
+Current historical validation supports:
+
+- Rolling historical snapshots over a configurable candle lookback
+- Per-snapshot trend, sideways/range, support/resistance, volume, breakout, and bias reads
+- Summary counts for trend direction, market type, breakout direction, and bias
+- High-relative-volume and confirmed-breakout-volume counts
+- Deterministic tests using synthetic candles
+- Optional real-data script:
+
+```bash
+python scripts/run_historical_read.py --symbol AAPL --period 2y --interval 1d
+```
 
 ## Development Setup
 
