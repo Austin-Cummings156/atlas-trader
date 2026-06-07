@@ -136,15 +136,15 @@ Future alerting may include:
 
 ## Current Status
 
-Version: 0.5.0
+Version: 0.6.0
 
 Current focus:
 
-- Multi-timeframe analysis across 4H, 1D, and long-term context
-- Per-timeframe trend, sideways market, support/resistance, and volume summaries
-- Cross-timeframe directional bias and alignment classification
-- Conflict detection when shorter and higher timeframes disagree
-- Weighted confidence for combined timeframe reads
+- Fundamental analysis for swing and position research
+- Growth, performance, valuation, earnings, debt, and profitability classification
+- Overall fundamental score and rating
+- Partial-data handling for incomplete company metrics
+- Tunable fundamental-analysis thresholds
 
 ### v0.2 Candle Reader
 
@@ -213,6 +213,24 @@ Current multi-timeframe analysis supports:
   bearish, sideways, conflicted, or unknown
 - Weighted confidence that gives higher-timeframe context more influence by default
 - Directional conflict reporting when analyzed timeframes disagree
+
+### v0.6 Fundamentals Reader
+
+The v0.6 reader adds a data-only fundamentals analysis layer for swing and position
+research. It classifies supplied company metrics without fetching live external data.
+
+Current fundamental analysis supports:
+
+- Raw fundamental metric validation for one symbol
+- Growth context from annual growth, EPS growth, and revenue growth
+- Performance context from one-year and five-year performance
+- Quarterly EPS trend classification: improving, flat, declining, mixed, or unknown
+- P/E valuation context: low, fair, high, or unknown
+- Debt load classification from debt-to-equity ratio
+- Profitability classification from profit margin and return on equity
+- Overall score, data-quality ratio, and rating: strong, positive, neutral, weak,
+  or unknown
+- Immutable settings object for tuning fundamental thresholds
 
 ## Development Setup
 
