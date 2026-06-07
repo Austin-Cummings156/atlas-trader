@@ -136,15 +136,15 @@ Future alerting may include:
 
 ## Current Status
 
-Version: 0.4.0
+Version: 0.5.0
 
 Current focus:
 
-- Support and resistance detection
-- Volume average and relative volume context
-- Rising and falling volume classification
-- Breakout volume confirmation
-- Moving average context for level analysis
+- Multi-timeframe analysis across 4H, 1D, and long-term context
+- Per-timeframe trend, sideways market, support/resistance, and volume summaries
+- Cross-timeframe directional bias and alignment classification
+- Conflict detection when shorter and higher timeframes disagree
+- Weighted confidence for combined timeframe reads
 
 ### v0.2 Candle Reader
 
@@ -196,6 +196,23 @@ Current support/resistance and volume analysis supports:
 - Relative volume classification: high, average, low, or unknown
 - Volume trend classification: rising, falling, flat, mixed, or unknown
 - Breakout volume context: confirmed, weak, absent, or unknown
+
+### v0.5 Multi-Timeframe Analysis
+
+The v0.5 reader starts combining the existing market-reading modules across multiple
+timeframes for swing and position context.
+
+Current multi-timeframe analysis supports:
+
+- Individual timeframe summaries that compose trend, sideways/range, support/resistance,
+  and volume analysis
+- Timeframe roles for recent, primary, long-term, and supporting context
+- Default swing/position roles for 4H, 1D, and 1Y candles
+- Directional bias classification: bullish, bearish, sideways, or unknown
+- Cross-timeframe alignment classification: strong bullish, bullish, strong bearish,
+  bearish, sideways, conflicted, or unknown
+- Weighted confidence that gives higher-timeframe context more influence by default
+- Directional conflict reporting when analyzed timeframes disagree
 
 ## Development Setup
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "atlas-trader"
-version = "0.4.0"
+version = "0.5.0"
 description = "A Python market analysis and trading research system focused on swing and position trading before live automation."
 readme = "README.md"
 requires-python = ">=3.12"
