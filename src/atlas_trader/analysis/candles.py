@@ -79,8 +79,7 @@ class CandleAnalysisSettings:
             <= 1
         ):
             raise ValueError(
-                "body thresholds must satisfy "
-                "0 <= indecision <= moderate <= strong <= 1."
+                "body thresholds must satisfy 0 <= indecision <= moderate <= strong <= 1."
             )
         if not 0 <= self.long_wick_ratio <= 1:
             raise ValueError("long_wick_ratio must be between zero and one.")

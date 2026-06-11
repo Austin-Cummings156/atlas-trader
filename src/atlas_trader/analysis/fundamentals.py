@@ -68,22 +68,14 @@ class FundamentalAnalysisSettings:
 
     def __post_init__(self) -> None:
         """Validate fundamental-analysis thresholds."""
-        if not (
-            self.weak_growth_rate
-            <= self.positive_growth_rate
-            <= self.strong_growth_rate
-        ):
-            raise ValueError(
-                "growth thresholds must satisfy weak <= positive <= strong."
-            )
+        if not (self.weak_growth_rate <= self.positive_growth_rate <= self.strong_growth_rate):
+            raise ValueError("growth thresholds must satisfy weak <= positive <= strong.")
         if not (
             self.weak_performance_rate
             <= self.positive_performance_rate
             <= self.strong_performance_rate
         ):
-            raise ValueError(
-                "performance thresholds must satisfy weak <= positive <= strong."
-            )
+            raise ValueError("performance thresholds must satisfy weak <= positive <= strong.")
         if not 0 < self.low_pe_ratio <= self.high_pe_ratio:
             raise ValueError("P/E thresholds must satisfy 0 < low_pe_ratio <= high_pe_ratio.")
         if not 0 <= self.max_healthy_debt_to_equity <= self.max_elevated_debt_to_equity:
@@ -95,14 +87,8 @@ class FundamentalAnalysisSettings:
             raise ValueError("min_quarters_for_trend must be greater than one.")
         if self.flat_earnings_tolerance_ratio < 0:
             raise ValueError("flat_earnings_tolerance_ratio cannot be negative.")
-        if not (
-            self.weak_rating_score
-            <= self.positive_rating_score
-            <= self.strong_rating_score
-        ):
-            raise ValueError(
-                "rating thresholds must satisfy weak <= positive <= strong."
-            )
+        if not (self.weak_rating_score <= self.positive_rating_score <= self.strong_rating_score):
+            raise ValueError("rating thresholds must satisfy weak <= positive <= strong.")
 
 
 DEFAULT_FUNDAMENTAL_ANALYSIS_SETTINGS = FundamentalAnalysisSettings()
@@ -380,9 +366,7 @@ def _signal_for_valuation(valuation_level: ValuationLevel) -> FundamentalSignal:
 
 def _combined_signal(signals: Sequence[FundamentalSignal]) -> FundamentalSignal:
     known_scores = [
-        _score_for_signal(signal)
-        for signal in signals
-        if signal != FundamentalSignal.UNKNOWN
+        _score_for_signal(signal) for signal in signals if signal != FundamentalSignal.UNKNOWN
     ]
     if not known_scores:
         return FundamentalSignal.UNKNOWN
@@ -397,9 +381,7 @@ def _combined_signal(signals: Sequence[FundamentalSignal]) -> FundamentalSignal:
 
 def _score_signals(signals: Sequence[FundamentalSignal]) -> float | None:
     known_scores = [
-        _score_for_signal(signal)
-        for signal in signals
-        if signal != FundamentalSignal.UNKNOWN
+        _score_for_signal(signal) for signal in signals if signal != FundamentalSignal.UNKNOWN
     ]
     if not known_scores:
         return None

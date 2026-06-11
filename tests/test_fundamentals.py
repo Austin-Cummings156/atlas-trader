@@ -124,13 +124,9 @@ def test_standalone_fundamental_classifiers() -> None:
 def test_earnings_trend_classifies_improving_flat_declining_and_mixed() -> None:
     settings = FundamentalAnalysisSettings(flat_earnings_tolerance_ratio=0.03)
 
-    assert classify_earnings_trend([1.0, 1.2, 1.4], settings=settings) == (
-        EarningsTrend.IMPROVING
-    )
+    assert classify_earnings_trend([1.0, 1.2, 1.4], settings=settings) == (EarningsTrend.IMPROVING)
     assert classify_earnings_trend([1.0, 1.01, 1.02], settings=settings) == EarningsTrend.FLAT
-    assert classify_earnings_trend([1.4, 1.2, 1.0], settings=settings) == (
-        EarningsTrend.DECLINING
-    )
+    assert classify_earnings_trend([1.4, 1.2, 1.0], settings=settings) == (EarningsTrend.DECLINING)
     assert classify_earnings_trend([1.0, 1.2, 1.1], settings=settings) == EarningsTrend.MIXED
     assert classify_earnings_trend([1.0, 1.2], settings=settings) == EarningsTrend.UNKNOWN
 

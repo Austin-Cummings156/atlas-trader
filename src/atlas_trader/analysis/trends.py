@@ -164,13 +164,9 @@ def analyze_trend(
 ) -> TrendAnalysis:
     """Analyze trend direction from higher-high/higher-low or lower-high/lower-low structure."""
     strength = _resolve_strength(strength, settings)
-    min_swing_pairs = (
-        settings.min_swing_pairs if min_swing_pairs is None else min_swing_pairs
-    )
+    min_swing_pairs = settings.min_swing_pairs if min_swing_pairs is None else min_swing_pairs
     min_trend_confidence = (
-        settings.min_trend_confidence
-        if min_trend_confidence is None
-        else min_trend_confidence
+        settings.min_trend_confidence if min_trend_confidence is None else min_trend_confidence
     )
     _validate_min_swing_pairs(min_swing_pairs)
     _validate_min_trend_confidence(min_trend_confidence)

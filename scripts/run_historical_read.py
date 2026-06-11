@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -32,13 +33,16 @@ def main() -> None:
         _write_audit_csv(
             report,
             Path(args.audit_csv),
+            timeframe=args.interval,
             events_only=not args.full_audit,
             include_level_events=args.include_level_events,
         )
     _print_report(
         report,
+        timeframe=args.interval,
         audit_limit=args.audit_limit,
         include_level_events=args.include_level_events,
+        tail=args.tail,
     )
 
 
@@ -53,6 +57,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--support-resistance-strength", type=int, default=None)
     parser.add_argument("--volume-average-period", type=int, default=None)
     parser.add_argument("--audit-limit", type=int, default=20, help="Audit rows to print.")
+    parser.add_argument(
+        "--tail",
+        type=int,
+        default=0,
+        help="Print the latest N structured snapshot summaries.",
+    )
     parser.add_argument("--audit-csv", help="Optional path for audit CSV output.")
     parser.add_argument(
         "--full-audit",
@@ -105,7 +115,8 @@ def _row_value(row: Any, key: str) -> float | None:
     value = row.get(key)
     if value is None:
         return None
-    return float(value)
+    numeric_value = float(value)
+    return numeric_value if isfinite(numeric_value) else None
 
 
 def _to_datetime(value: Any) -> datetime:
@@ -117,8 +128,10 @@ def _to_datetime(value: Any) -> datetime:
 def _print_report(
     report: Any,
     *,
+    timeframe: str | None,
     audit_limit: int,
     include_level_events: bool,
+    tail: int,
 ) -> None:
     console = Console()
     latest = report.latest_snapshot
@@ -131,11 +144,12 @@ def _print_report(
     )
 
     if latest is not None:
+        latest_report = latest.to_debug_report(timeframe=timeframe)
         console.print(
             "Latest: "
-            f"{latest.candle.timestamp.date()} close={latest.close:.2f} "
-            f"bias={latest.bias} trend={latest.trend.direction} "
-            f"market={latest.sideways_market.market_type}"
+            f"{latest_report['candle_date']} close={latest_report['latest_close']:.2f} "
+            f"bias={latest_report['bias']} trend={latest_report['trend_direction']} "
+            f"market={latest_report['market_type']}"
         )
 
     table = Table(title="Historical Read Counts")
@@ -175,21 +189,63 @@ def _print_report(
         console.print(audit_table)
         console.print(f"Audit events: {len(audit_events)}")
 
+    if tail > 0:
+        snapshot_table = Table(title=f"Latest {tail} Snapshot Reports")
+        snapshot_table.add_column("Date")
+        snapshot_table.add_column("Close")
+        snapshot_table.add_column("Bias")
+        snapshot_table.add_column("Trend")
+        snapshot_table.add_column("Conf")
+        snapshot_table.add_column("Market")
+        snapshot_table.add_column("Vol")
+        snapshot_table.add_column("Pressure")
+        snapshot_table.add_column("Condition")
+        snapshot_table.add_column("Candidate")
+        snapshot_table.add_column("MA Context")
+        snapshot_table.add_column("Support")
+        snapshot_table.add_column("Resistance")
+        snapshot_table.add_column("Volume")
+        snapshot_table.add_column("Unknowns")
+
+        for snapshot_report in report.snapshot_debug_reports(
+            tail=tail,
+            timeframe=timeframe,
+        ):
+            snapshot_table.add_row(
+                str(snapshot_report["candle_date"]),
+                f"{snapshot_report['latest_close']:.2f}",
+                str(snapshot_report["bias"]),
+                str(snapshot_report["trend_direction"]),
+                f"{snapshot_report['trend_confidence']:.2f}",
+                str(snapshot_report["market_type"]),
+                str(snapshot_report["volatility_level"]),
+                str(snapshot_report["short_term_pressure"]),
+                str(snapshot_report["trend_condition"]),
+                _format_candidate(snapshot_report),
+                _format_ma_context(snapshot_report),
+                _format_optional_price(snapshot_report["nearest_support_price"]),
+                _format_optional_price(snapshot_report["nearest_resistance_price"]),
+                str(snapshot_report["relative_volume_level"]),
+                ", ".join(snapshot_report["unknown_reasons"]),
+            )
+        console.print(snapshot_table)
+
 
 def _write_audit_csv(
     report: Any,
     path: Path,
     *,
+    timeframe: str | None,
     events_only: bool,
     include_level_events: bool,
 ) -> None:
     rows = (
         [
-            _audit_row(event.snapshot, event.reasons)
+            _audit_row(event.snapshot, event.reasons, timeframe=timeframe)
             for event in report.audit_events(include_level_events=include_level_events)
         ]
         if events_only
-        else [_audit_row(snapshot, []) for snapshot in report.snapshots]
+        else [_audit_row(snapshot, [], timeframe=timeframe) for snapshot in report.snapshots]
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as output_file:
@@ -216,25 +272,27 @@ def _audit_fieldnames() -> tuple[str, ...]:
     )
 
 
-def _audit_row(snapshot: Any, reasons: list[Any]) -> dict[str, str | float | None]:
-    nearest_support = snapshot.support_resistance.nearest_support
-    nearest_resistance = snapshot.support_resistance.nearest_resistance
+def _audit_row(
+    snapshot: Any,
+    reasons: list[Any],
+    *,
+    timeframe: str | None,
+) -> dict[str, str | float | None]:
+    snapshot_report = snapshot.to_debug_report(timeframe=timeframe, reasons=reasons)
     return {
-        "date": snapshot.candle.timestamp.date().isoformat(),
-        "close": round(snapshot.close, 4),
-        "bias": str(snapshot.bias),
-        "trend": str(snapshot.trend.direction),
-        "trend_confidence": snapshot.trend.confidence,
-        "market_type": str(snapshot.sideways_market.market_type),
-        "breakout": str(snapshot.sideways_market.breakout_direction),
-        "relative_volume": str(snapshot.volume.relative_volume_level),
-        "volume_trend": str(snapshot.volume.volume_trend),
-        "breakout_volume": str(snapshot.volume.breakout_context),
-        "nearest_support": round(nearest_support.price, 4) if nearest_support else None,
-        "nearest_resistance": (
-            round(nearest_resistance.price, 4) if nearest_resistance else None
-        ),
-        "reasons": "|".join(str(reason) for reason in reasons),
+        "date": snapshot_report["candle_date"],
+        "close": round(snapshot_report["latest_close"], 4),
+        "bias": snapshot_report["bias"],
+        "trend": snapshot_report["trend_direction"],
+        "trend_confidence": snapshot_report["trend_confidence"],
+        "market_type": snapshot_report["market_type"],
+        "breakout": snapshot_report["breakout_direction"],
+        "relative_volume": snapshot_report["relative_volume_level"],
+        "volume_trend": snapshot_report["volume_trend"],
+        "breakout_volume": snapshot_report["breakout_volume_context"],
+        "nearest_support": _round_optional_price(snapshot_report["nearest_support_price"]),
+        "nearest_resistance": _round_optional_price(snapshot_report["nearest_resistance_price"]),
+        "reasons": "|".join(snapshot_report["audit_reasons"]),
     }
 
 
@@ -242,6 +300,35 @@ def _format_counts(counts: dict[Any, int]) -> str:
     if not counts:
         return "none"
     return ", ".join(f"{key}: {value}" for key, value in counts.items())
+
+
+def _round_optional_price(value: Any) -> float | None:
+    return round(value, 4) if value is not None else None
+
+
+def _format_optional_price(value: Any) -> str:
+    return f"{value:.2f}" if value is not None else "-"
+
+
+def _format_ma_context(snapshot_report: dict[str, Any]) -> str:
+    nearest_support = snapshot_report["nearest_ma_support"]
+    nearest_resistance = snapshot_report["nearest_ma_resistance"]
+    if nearest_support:
+        return f"{nearest_support['name']} support"
+    if nearest_resistance:
+        return f"{nearest_resistance['name']} resistance"
+    return (
+        f"20:{snapshot_report['price_vs_ema_20']} "
+        f"50:{snapshot_report['price_vs_ema_50']} "
+        f"200:{snapshot_report['price_vs_ema_200']}"
+    )
+
+
+def _format_candidate(snapshot_report: dict[str, Any]) -> str:
+    candidate = snapshot_report["trend_candidate"]
+    if snapshot_report["messy_trend_candidate"]:
+        return f"messy_{candidate}"
+    return str(candidate)
 
 
 if __name__ == "__main__":
