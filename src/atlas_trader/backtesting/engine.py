@@ -78,6 +78,7 @@ class HistoricalReadSettings:
 
     lookback: int = 60
     step: int = 1
+    indicator_warmup_lookback: int = 250
     trend_strength: int | None = None
     support_resistance_strength: int | None = None
     volume_average_period: int | None = None
@@ -89,6 +90,8 @@ class HistoricalReadSettings:
             raise ValueError("lookback must be greater than one.")
         if self.step <= 0:
             raise ValueError("step must be greater than zero.")
+        if self.indicator_warmup_lookback <= 1:
+            raise ValueError("indicator_warmup_lookback must be greater than one.")
         if self.trend_strength is not None and self.trend_strength <= 0:
             raise ValueError("trend_strength must be greater than zero.")
         if self.support_resistance_strength is not None and self.support_resistance_strength <= 0:
@@ -111,6 +114,7 @@ class HistoricalReadSnapshot:
     index: int
     candle: Candle
     window_size: int
+    indicator_window_size: int
     trend: TrendAnalysis
     sideways_market: SidewaysMarketAnalysis
     support_resistance: SupportResistanceAnalysis
@@ -136,13 +140,14 @@ class HistoricalReadSnapshot:
         nearest_support = self.support_resistance.nearest_support
         nearest_resistance = self.support_resistance.nearest_resistance
 
-        return {
+        report = {
             "symbol": self.candle.symbol,
             "timeframe": timeframe,
             "snapshot_index": self.index,
             "candle_timestamp": self.candle.timestamp.isoformat(),
             "candle_date": self.candle.timestamp.date().isoformat(),
             "window_size": self.window_size,
+            "indicator_window_size": self.indicator_window_size,
             "latest_close": self.close,
             "bias": self.bias.value,
             "trend_direction": self.trend.direction.value,
@@ -175,11 +180,13 @@ class HistoricalReadSnapshot:
             "insufficient_swing_structure": (self.trend_evidence.insufficient_swing_structure),
             "trend_candidate": self.trend_evidence.trend_candidate.value,
             "trend_candidate_confidence": (self.trend_evidence.trend_candidate_confidence),
-            "trend_candidate_score": self.trend_evidence.trend_candidate_score,
-            "trend_candidate_direction_score": (
-                self.trend_evidence.trend_candidate_direction_score
-            ),
+            "trend_candidate_raw_score": self.trend_evidence.trend_candidate_raw_score,
             "trend_candidate_conflict_count": (self.trend_evidence.trend_candidate_conflict_count),
+            "trend_candidate_effective_score": (
+                self.trend_evidence.trend_candidate_effective_score
+            ),
+            "trend_candidate_threshold": self.trend_evidence.trend_candidate_threshold,
+            "trend_candidate_selected_score": (self.trend_evidence.trend_candidate_selected_score),
             "trend_candidate_blocked_reason": (
                 self.trend_evidence.trend_candidate_blocked_reason.value
                 if self.trend_evidence.trend_candidate_blocked_reason
@@ -257,6 +264,8 @@ class HistoricalReadSnapshot:
             "audit_reasons": [reason.value for reason in reasons or []],
             "unknown_reasons": _unknown_reasons(self),
         }
+        report.update(_market_read_summary(report))
+        return report
 
 
 @dataclass(frozen=True)
@@ -343,6 +352,7 @@ class HistoricalReadReport:
             "snapshot_count": self.snapshot_count,
             "lookback": self.settings.lookback,
             "step": self.settings.step,
+            "indicator_warmup_lookback": self.settings.indicator_warmup_lookback,
             "min_window": min_window,
             "latest_snapshot": (
                 self.latest_snapshot.to_debug_report(timeframe=timeframe)
@@ -375,9 +385,13 @@ def analyze_historical_market(
 
     for end_index in range(min_window, len(candle_list) + 1, settings.step):
         window = candle_list[max(0, end_index - settings.lookback) : end_index]
+        indicator_window = candle_list[
+            max(0, end_index - settings.indicator_warmup_lookback) : end_index
+        ]
         snapshot = _analyze_window(
             index=end_index - 1,
             window=window,
+            indicator_window=indicator_window,
             settings=settings,
         )
         snapshots.append(snapshot)
@@ -408,6 +422,7 @@ def _analyze_window(
     *,
     index: int,
     window: Sequence[Candle],
+    indicator_window: Sequence[Candle],
     settings: HistoricalReadSettings,
 ) -> HistoricalReadSnapshot:
     trend = analyze_trend(window, strength=settings.trend_strength)
@@ -422,7 +437,7 @@ def _analyze_window(
         breakout_direction=sideways_market.breakout_direction,
     )
     volatility = analyze_volatility(window)
-    moving_averages = analyze_moving_average_context(window)
+    moving_averages = analyze_moving_average_context(indicator_window)
     trend_health = analyze_trend_health(
         window,
         trend=trend,
@@ -440,6 +455,7 @@ def _analyze_window(
         index=index,
         candle=window[-1],
         window_size=len(window),
+        indicator_window_size=len(indicator_window),
         trend=trend,
         sideways_market=sideways_market,
         support_resistance=support_resistance,
@@ -559,6 +575,179 @@ def _moving_average_level_report(
     }
 
 
+def _market_read_summary(report: dict[str, object]) -> dict[str, object]:
+    status = _market_read_status(report)
+    return {
+        "market_read_status": status,
+        "market_read_summary": _market_read_summary_text(status, report),
+        "caution_notes": _caution_notes(report),
+        "key_levels_summary": _key_levels_summary(report),
+        "actionability": "watch_only",
+    }
+
+
+def _market_read_status(report: dict[str, object]) -> str:
+    market_type = report["market_type"]
+    trend_direction = report["trend_direction"]
+    trend_condition = report["trend_condition"]
+    pressure = report["short_term_pressure"]
+    trend_candidate = report["trend_candidate"]
+    messy_candidate = report["messy_trend_candidate"]
+
+    if market_type == SidewaysMarketType.TRADING_RANGE.value:
+        return "trading_range"
+    if market_type == SidewaysMarketType.CONSOLIDATION.value:
+        return "consolidation"
+    if market_type == SidewaysMarketType.CONGESTION.value:
+        return "congestion"
+    if trend_direction == TrendDirection.UNKNOWN.value:
+        return "unknown_insufficient_data"
+    if (
+        trend_direction == TrendDirection.SIDEWAYS.value
+        and messy_candidate
+        and trend_candidate == TrendDirection.UPTREND.value
+    ):
+        return "structural_sideways_with_messy_uptrend_candidate"
+    if (
+        trend_direction == TrendDirection.SIDEWAYS.value
+        and messy_candidate
+        and trend_candidate == TrendDirection.DOWNTREND.value
+    ):
+        return "structural_sideways_with_messy_downtrend_candidate"
+    if trend_direction == TrendDirection.UPTREND.value and trend_condition == "pulling_back":
+        return "structural_uptrend_with_pullback"
+    if trend_direction == TrendDirection.UPTREND.value and trend_condition == "strengthening":
+        return "uptrend_strengthening"
+    if trend_direction == TrendDirection.DOWNTREND.value and pressure == "bullish":
+        return "downtrend_with_bounce"
+    if trend_direction == TrendDirection.UPTREND.value:
+        return "structural_uptrend"
+    if trend_direction == TrendDirection.DOWNTREND.value:
+        return "structural_downtrend"
+    if trend_direction == TrendDirection.SIDEWAYS.value:
+        return "structural_sideways"
+    return "unknown_insufficient_data"
+
+
+def _market_read_summary_text(status: str, report: dict[str, object]) -> str:
+    pressure = str(report["short_term_pressure"])
+    condition = str(report["trend_condition"])
+    ma_context = _summary_ma_context(report)
+
+    if status == "structural_uptrend_with_pullback":
+        return f"Structural uptrend with {pressure}_pressure and {condition}; {ma_context}."
+    if status == "structural_sideways_with_messy_uptrend_candidate":
+        return (
+            "Structural sideways market with messy uptrend candidate; "
+            f"{pressure}_pressure and {ma_context}."
+        )
+    if status == "structural_sideways_with_messy_downtrend_candidate":
+        return (
+            "Structural sideways market with messy downtrend candidate; "
+            f"{pressure}_pressure and {ma_context}."
+        )
+    if status == "trading_range":
+        return (
+            "Trading range; candidate direction is blocked or neutral; "
+            "watch support and resistance boundaries."
+        )
+    if status == "consolidation":
+        return "Consolidation; range-bound context with neutral watch status."
+    if status == "congestion":
+        return "Congestion; tight range-bound context with neutral watch status."
+    if status == "downtrend_with_bounce":
+        return f"Structural downtrend with bullish pressure bounce; {ma_context}."
+    if status == "uptrend_strengthening":
+        return f"Structural uptrend strengthening; {ma_context}."
+    if status == "structural_uptrend":
+        return f"Structural uptrend; {pressure}_pressure and {ma_context}."
+    if status == "structural_downtrend":
+        return f"Structural downtrend; {pressure}_pressure and {ma_context}."
+    if status == "structural_sideways":
+        return f"Structural sideways market; {pressure}_pressure and {ma_context}."
+    return "Unknown or insufficient data; watch_only until context is clearer."
+
+
+def _summary_ma_context(report: dict[str, object]) -> str:
+    nearest_support = report["nearest_ma_support"]
+    nearest_resistance = report["nearest_ma_resistance"]
+    if isinstance(nearest_support, dict):
+        return f"price is near {nearest_support['name']} support"
+    if isinstance(nearest_resistance, dict):
+        return f"price is near {nearest_resistance['name']} resistance"
+    return (
+        f"EMA20 {report['price_vs_ema_20']}, "
+        f"EMA50 {report['price_vs_ema_50']}, "
+        f"EMA200 {report['price_vs_ema_200']}"
+    )
+
+
+def _caution_notes(report: dict[str, object]) -> list[str]:
+    notes: list[str] = []
+    pressure = report["short_term_pressure"]
+    condition = report["trend_condition"]
+    market_type = report["market_type"]
+
+    if pressure != "unknown":
+        notes.append(f"{pressure}_pressure")
+    if condition != "unknown":
+        notes.append(str(condition))
+    if market_type in {
+        SidewaysMarketType.TRADING_RANGE.value,
+        SidewaysMarketType.CONSOLIDATION.value,
+        SidewaysMarketType.CONGESTION.value,
+    }:
+        notes.append("range_bound")
+    if report["trend_candidate_blocked_reason"] is not None:
+        notes.append(f"candidate_blocked:{report['trend_candidate_blocked_reason']}")
+    if report["trend_candidate_conflict_count"] != 0:
+        notes.append("candidate_conflicts")
+    notes.extend(_level_position_notes(report))
+    return notes
+
+
+def _level_position_notes(report: dict[str, object]) -> list[str]:
+    notes: list[str] = []
+    nearest_support = report["nearest_support"]
+    nearest_resistance = report["nearest_resistance"]
+    if isinstance(nearest_support, dict) and nearest_support.get("position") == "near":
+        notes.append("near_support")
+    if isinstance(nearest_resistance, dict) and nearest_resistance.get("position") == "near":
+        notes.append("near_resistance")
+    if "testing_ema50" in report["trend_health_reasons"]:
+        notes.append("testing_ema50")
+    return notes
+
+
+def _key_levels_summary(report: dict[str, object]) -> list[str]:
+    levels: list[str] = []
+    _append_price_level(levels, "nearest_support", report["nearest_support"])
+    _append_price_level(levels, "nearest_resistance", report["nearest_resistance"])
+    _append_ma_level(levels, "ma_support", report["nearest_ma_support"])
+    _append_ma_level(levels, "ma_resistance", report["nearest_ma_resistance"])
+    if report["range_lower_bound"] is not None and report["range_upper_bound"] is not None:
+        levels.append(f"range {report['range_lower_bound']:.2f}-{report['range_upper_bound']:.2f}")
+    return levels
+
+
+def _append_price_level(
+    levels: list[str],
+    label: str,
+    level: object,
+) -> None:
+    if isinstance(level, dict):
+        levels.append(f"{label} {level['price']:.2f}")
+
+
+def _append_ma_level(
+    levels: list[str],
+    label: str,
+    level: object,
+) -> None:
+    if isinstance(level, dict):
+        levels.append(f"{label} {level['name']} {level['value']:.2f}")
+
+
 def _unknown_reasons(snapshot: HistoricalReadSnapshot) -> list[str]:
     reasons: list[str] = []
     if snapshot.trend.direction == TrendDirection.UNKNOWN:
@@ -571,6 +760,8 @@ def _unknown_reasons(snapshot: HistoricalReadSnapshot) -> list[str]:
         reasons.append("volatility_unknown")
     if snapshot.trend_health.recent_return_pct is None:
         reasons.append("recent_return_unknown")
+    if snapshot.moving_averages.ema_200.value is None:
+        reasons.append("ema_200_unknown")
     if snapshot.support_resistance.nearest_support is None:
         reasons.append("nearest_support_unknown")
     if snapshot.support_resistance.nearest_resistance is None:

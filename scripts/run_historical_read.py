@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 from datetime import datetime
 from math import isfinite
 from pathlib import Path
@@ -43,6 +44,7 @@ def main() -> None:
         audit_limit=args.audit_limit,
         include_level_events=args.include_level_events,
         tail=args.tail,
+        debug_tail=args.debug_tail,
     )
 
 
@@ -62,6 +64,12 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="Print the latest N structured snapshot summaries.",
+    )
+    parser.add_argument(
+        "--debug-tail",
+        type=int,
+        default=0,
+        help="Print full JSON debug reports for the latest N snapshots.",
     )
     parser.add_argument("--audit-csv", help="Optional path for audit CSV output.")
     parser.add_argument(
@@ -132,6 +140,7 @@ def _print_report(
     audit_limit: int,
     include_level_events: bool,
     tail: int,
+    debug_tail: int,
 ) -> None:
     console = Console()
     latest = report.latest_snapshot
@@ -151,6 +160,7 @@ def _print_report(
             f"bias={latest_report['bias']} trend={latest_report['trend_direction']} "
             f"market={latest_report['market_type']}"
         )
+        console.print(f"Read: {latest_report['market_read_summary']}")
 
     table = Table(title="Historical Read Counts")
     table.add_column("Category")
@@ -229,6 +239,10 @@ def _print_report(
                 ", ".join(snapshot_report["unknown_reasons"]),
             )
         console.print(snapshot_table)
+
+    if debug_tail > 0:
+        console.print(f"[bold]Latest {debug_tail} Full Debug Snapshot Reports[/bold]")
+        console.print_json(_debug_tail_json(report, timeframe=timeframe, debug_tail=debug_tail))
 
 
 def _write_audit_csv(
@@ -329,6 +343,15 @@ def _format_candidate(snapshot_report: dict[str, Any]) -> str:
     if snapshot_report["messy_trend_candidate"]:
         return f"messy_{candidate}"
     return str(candidate)
+
+
+def _debug_tail_json(report: Any, *, timeframe: str | None, debug_tail: int) -> str:
+    if debug_tail <= 0:
+        return "[]"
+    return json.dumps(
+        report.snapshot_debug_reports(tail=debug_tail, timeframe=timeframe),
+        indent=2,
+    )
 
 
 if __name__ == "__main__":

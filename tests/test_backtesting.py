@@ -165,6 +165,18 @@ def ko_like_range_candles(*, direction: int) -> list[Candle]:
     return candles
 
 
+def steady_uptrend_candles(count: int) -> list[Candle]:
+    return [
+        make_candle(
+            index,
+            high=100 + index + 1,
+            low=100 + index - 1,
+            close=100 + index,
+        )
+        for index in range(count)
+    ]
+
+
 def test_historical_read_api_is_exposed_from_backtesting_package() -> None:
     assert backtesting_api.HistoricalReadSettings is HistoricalReadSettings
     assert backtesting_api.analyze_historical_market is analyze_historical_market
@@ -243,6 +255,7 @@ def test_historical_snapshot_debug_report_has_stable_fields() -> None:
         "candle_timestamp",
         "candle_date",
         "window_size",
+        "indicator_window_size",
         "latest_close",
         "bias",
         "trend_direction",
@@ -271,9 +284,11 @@ def test_historical_snapshot_debug_report_has_stable_fields() -> None:
         "insufficient_swing_structure",
         "trend_candidate",
         "trend_candidate_confidence",
-        "trend_candidate_score",
-        "trend_candidate_direction_score",
+        "trend_candidate_raw_score",
         "trend_candidate_conflict_count",
+        "trend_candidate_effective_score",
+        "trend_candidate_threshold",
+        "trend_candidate_selected_score",
         "trend_candidate_blocked_reason",
         "trend_candidate_raw_reasons",
         "trend_candidate_reasons",
@@ -334,6 +349,11 @@ def test_historical_snapshot_debug_report_has_stable_fields() -> None:
         "multi_timeframe_conflicts",
         "audit_reasons",
         "unknown_reasons",
+        "market_read_status",
+        "market_read_summary",
+        "caution_notes",
+        "key_levels_summary",
+        "actionability",
     )
     assert snapshot_report["symbol"] == "TEST"
     assert snapshot_report["timeframe"] == "1d"
@@ -375,8 +395,54 @@ def test_historical_snapshot_debug_report_handles_insufficient_context_fields() 
     assert snapshot_report["trend_condition"] == "unknown"
     assert snapshot_report["recent_return_pct"] is None
     assert "recent_return_unknown" in snapshot_report["unknown_reasons"]
+    assert "ema_200_unknown" in snapshot_report["unknown_reasons"]
     assert snapshot_report["trend_fallback_reason"] == "insufficient_swing_structure"
     assert snapshot_report["insufficient_swing_structure"] is True
+
+
+def test_historical_snapshot_uses_indicator_warmup_for_ema200() -> None:
+    candles = steady_uptrend_candles(220)
+    settings = HistoricalReadSettings(
+        lookback=60,
+        min_window=60,
+        trend_strength=1,
+    )
+
+    report = analyze_historical_market(candles, settings=settings)
+    first_snapshot = report.snapshot_debug_reports()[0]
+    latest_snapshot = report.snapshot_debug_reports()[-1]
+
+    assert first_snapshot["window_size"] == 60
+    assert first_snapshot["indicator_window_size"] == 60
+    assert first_snapshot["ema_20"] is not None
+    assert first_snapshot["ema_50"] is not None
+    assert first_snapshot["ema_200"] is None
+    assert first_snapshot["price_vs_ema_200"] == "unknown"
+
+    assert latest_snapshot["window_size"] == 60
+    assert latest_snapshot["indicator_window_size"] == 220
+    assert latest_snapshot["ema_20"] is not None
+    assert latest_snapshot["ema_50"] is not None
+    assert latest_snapshot["ema_200"] is not None
+    assert latest_snapshot["price_vs_ema_200"] in {"above", "near"}
+
+
+def test_historical_snapshot_indicator_warmup_does_not_expand_structural_window() -> None:
+    candles = [*steady_uptrend_candles(210), *sideways_candles()]
+    settings = HistoricalReadSettings(
+        lookback=len(sideways_candles()),
+        trend_strength=1,
+    )
+
+    report = analyze_historical_market(candles, settings=settings)
+    latest_snapshot = report.snapshot_debug_reports()[-1]
+
+    assert latest_snapshot["window_size"] == len(sideways_candles())
+    assert latest_snapshot["indicator_window_size"] > latest_snapshot["window_size"]
+    assert latest_snapshot["market_type"] == "trading_range"
+    assert latest_snapshot["range_upper_bound"] == 112
+    assert latest_snapshot["range_lower_bound"] == 98
+    assert latest_snapshot["ema_200"] is not None
 
 
 def test_historical_snapshot_debug_report_handles_sideways_candles() -> None:
@@ -475,6 +541,11 @@ def test_historical_snapshot_reports_uptrend_pullback_pressure_without_changing_
     assert snapshot_report["pullback_from_recent_high_pct"] > 0.05
     assert "recent_lower_closes" in snapshot_report["trend_health_reasons"]
     assert "sharp_pullback_from_recent_high" in snapshot_report["trend_health_reasons"]
+    assert snapshot_report["market_read_status"] == "structural_uptrend_with_pullback"
+    assert "Structural uptrend" in snapshot_report["market_read_summary"]
+    assert "bearish_pressure" in snapshot_report["market_read_summary"]
+    assert "pulling_back" in snapshot_report["market_read_summary"]
+    assert snapshot_report["actionability"] == "watch_only"
 
 
 def test_historical_snapshot_reports_testing_ema50_and_long_term_ma_context() -> None:
@@ -493,6 +564,7 @@ def test_historical_snapshot_reports_testing_ema50_and_long_term_ma_context() ->
     assert snapshot_report["price_vs_ema_50"] == "near"
     assert snapshot_report["price_vs_ema_200"] == "above"
     assert snapshot_report["nearest_ma_support"]["name"] == "EMA200"
+    assert any("ma_support EMA200" in level for level in snapshot_report["key_levels_summary"])
     assert "testing_ema50" in snapshot_report["trend_health_reasons"]
     assert "still_above_ema200" in snapshot_report["trend_health_reasons"]
 
@@ -517,10 +589,14 @@ def test_historical_snapshot_reports_messy_uptrend_candidate_without_changing_tr
     assert "positive_window_return" in snapshot_report["trend_candidate_reasons"]
     assert "price_above_or_near_ema50" in snapshot_report["trend_candidate_reasons"]
     assert snapshot_report["trend_candidate_blocked_reason"] is None
-    assert snapshot_report["trend_candidate_score"] >= 3
+    assert snapshot_report["trend_candidate_raw_score"] >= 3
     assert (
-        snapshot_report["trend_candidate_direction_score"]
-        >= snapshot_report["trend_candidate_score"]
+        snapshot_report["trend_candidate_effective_score"]
+        >= snapshot_report["trend_candidate_threshold"]
+    )
+    assert (
+        snapshot_report["trend_candidate_selected_score"]
+        == snapshot_report["trend_candidate_effective_score"]
     )
 
 
@@ -544,6 +620,15 @@ def test_historical_snapshot_reports_messy_downtrend_candidate_without_changing_
     assert "negative_window_return" in snapshot_report["trend_candidate_reasons"]
     assert "price_below_ema200" in snapshot_report["trend_candidate_reasons"]
     assert snapshot_report["trend_candidate_blocked_reason"] is None
+    assert (
+        snapshot_report["trend_candidate_effective_score"]
+        >= snapshot_report["trend_candidate_threshold"]
+    )
+    assert (
+        snapshot_report["market_read_status"]
+        == "structural_sideways_with_messy_downtrend_candidate"
+    )
+    assert "messy downtrend candidate" in snapshot_report["market_read_summary"]
 
 
 def test_historical_snapshot_blocks_small_upward_range_candidate() -> None:
@@ -563,8 +648,12 @@ def test_historical_snapshot_blocks_small_upward_range_candidate() -> None:
     assert snapshot_report["trend_candidate_blocked_reason"] == (
         "range_market_without_breakout_evidence"
     )
-    assert snapshot_report["trend_candidate_direction_score"] >= 2
+    assert snapshot_report["trend_candidate_raw_score"] >= 2
+    assert snapshot_report["trend_candidate_selected_score"] == 0
     assert "up:positive_window_return" in snapshot_report["trend_candidate_raw_reasons"]
+    assert snapshot_report["market_read_status"] == "trading_range"
+    assert "Trading range" in snapshot_report["market_read_summary"]
+    assert "range_bound" in snapshot_report["caution_notes"]
 
 
 def test_historical_snapshot_blocks_small_downward_range_candidate() -> None:
@@ -584,7 +673,8 @@ def test_historical_snapshot_blocks_small_downward_range_candidate() -> None:
     assert snapshot_report["trend_candidate_blocked_reason"] == (
         "range_market_without_breakout_evidence"
     )
-    assert snapshot_report["trend_candidate_direction_score"] >= 2
+    assert snapshot_report["trend_candidate_raw_score"] >= 2
+    assert snapshot_report["trend_candidate_selected_score"] == 0
     assert "down:negative_window_return" in snapshot_report["trend_candidate_raw_reasons"]
 
 
@@ -603,8 +693,61 @@ def test_historical_snapshot_reports_candidate_pressure_conflicts() -> None:
     assert snapshot_report["trend_direction"] == "uptrend"
     assert snapshot_report["short_term_pressure"] == "bearish"
     assert snapshot_report["trend_candidate"] == "uptrend"
+    assert (
+        snapshot_report["trend_candidate_raw_score"] > snapshot_report["trend_candidate_threshold"]
+    )
+    assert (
+        snapshot_report["trend_candidate_effective_score"]
+        >= snapshot_report["trend_candidate_threshold"]
+    )
+    assert (
+        snapshot_report["trend_candidate_selected_score"]
+        == snapshot_report["trend_candidate_effective_score"]
+    )
+    assert snapshot_report["trend_candidate_blocked_reason"] is None
     assert snapshot_report["trend_candidate_conflict_count"] > 0
     assert "bearish_pressure_conflict" in snapshot_report["trend_candidate_conflicts"]
+
+
+def test_historical_snapshot_summary_uses_neutral_language() -> None:
+    reports = [
+        analyze_historical_market(
+            broad_uptrend_with_recent_pullback_candles(),
+            settings=HistoricalReadSettings(
+                lookback=220,
+                min_window=220,
+                trend_strength=1,
+            ),
+        ).snapshot_debug_reports()[0],
+        analyze_historical_market(
+            messy_directional_candles(direction=-1),
+            settings=HistoricalReadSettings(
+                lookback=len(messy_directional_candles(direction=-1)),
+                min_window=len(messy_directional_candles(direction=-1)),
+                trend_strength=1,
+            ),
+        ).snapshot_debug_reports()[0],
+        analyze_historical_market(
+            ko_like_range_candles(direction=1),
+            settings=HistoricalReadSettings(
+                lookback=len(ko_like_range_candles(direction=1)),
+                min_window=len(ko_like_range_candles(direction=1)),
+                trend_strength=1,
+            ),
+        ).snapshot_debug_reports()[0],
+    ]
+
+    blocked_words = {"buy", "sell", "short"}
+    for report in reports:
+        summary_values = [
+            report["market_read_status"],
+            report["market_read_summary"],
+            report["actionability"],
+            *report["caution_notes"],
+            *report["key_levels_summary"],
+        ]
+        summary_text = " ".join(str(value).lower() for value in summary_values)
+        assert not blocked_words.intersection(summary_text.split())
 
 
 def test_historical_market_read_rejects_invalid_inputs() -> None:

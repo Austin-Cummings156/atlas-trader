@@ -1,256 +1,240 @@
 # AtlasTrader
 
-AtlasTrader is a Python market analysis and trading research system focused first on swing and position trading, not day trading.
+AtlasTrader is a Python market-analysis, validation, and trading-research system focused
+first on swing and position trading. It is currently a research and market-reading
+validation project, not a live trading bot.
 
-The project starts as a market reader, not an automated trading bot. The first goal is to understand price action, trend structure, volume behavior, higher-timeframe context, and eventually fundamental data before any trade execution is considered.
+The current goal is to build a market reader that can explain what it sees in historical
+and current chart context before it is trusted for paper trading or live automation.
+Day-trading research may be added later, but the near-term system is being designed around
+slower swing and position workflows that can be reviewed without constant screen-watching.
 
-The initial trading focus is intentionally slower and more forgiving. Swing and position trading should require less constant screen-watching than day trading, while still building chart-reading logic that may later be useful for shorter-term systems.
-
-## Project Goals
-
-AtlasTrader is intended to grow through several stages:
-
-1. Read and classify market candles.
-2. Detect trends, ranges, congestion, and consolidation.
-3. Identify support, resistance, and important price zones.
-4. Analyze volume in context.
-5. Compare multiple timeframes such as 4H, 1D, and long-term yearly context.
-6. Add fundamental analysis for swing and position trading.
-7. Backtest systems using historical data.
-8. Paper trade before any live trading.
-9. Add alerts, reporting, and safety systems.
-10. Eventually research live automation only after the system proves itself.
-
-## Version Roadmap
-
-- v0.1 — Project setup
-- v0.2 — Candle reader
-- v0.3 — Trend, range, and consolidation detection
-- v0.4 — Support, resistance, and volume context
-- v0.5 — Multi-timeframe analysis
-- v0.6 — Fundamentals reader
-- v0.7 — Historical backtesting
-- v0.8 — Paper trading
-- v0.9 — Alerting and safety systems
-- v1.0 — Complete swing/position research bot
-
-## First Trading Focus
-
-The first trading mode will focus on swing and position trading. Day trading is not the initial target.
-
-This means AtlasTrader will eventually look for trades that may last from several days to several months, usually with the goal of following larger market trends instead of reacting to short-term noise.
-
-The same candle, trend, range, support, resistance, and volume logic may eventually help with day-trading research, but that comes later. The first priority is building a system around more forgiving setups that do not require constant monitoring.
-
-Initial timeframes of interest:
-
-- 4H candles for recent structure and possible entry timing
-- 1D candles for primary trend direction
-- Long-term yearly context for major trend and key levels
-
-## Planned System Areas
-
-### Market Reading
-
-- Candle direction
-- Candle body size
-- Upper and lower wick size
-- Strong candles
-- Weak candles
-- Indecision candles
-- Candle comparisons
-
-### Market Structure
-
-- Uptrends
-- Downtrends
-- Sideways markets
-- Trading ranges
-- Congestion
-- Consolidation
-- Swing highs
-- Swing lows
-- Higher highs and higher lows
-- Lower highs and lower lows
-
-### Key Levels
-
-- Support
-- Resistance
-- Breakouts
-- Failed breakouts
-- Retests
-
-### Volume
-
-- Rising volume
-- Falling volume
-- Breakout volume
-- Weak volume moves
-- Exhaustion behavior
-
-### Fundamentals
-
-Planned future fundamental checks may include:
-
-- Annual growth rate
-- Five-year performance
-- One-year performance
-- Quarterly earnings records
-- P/E ratio
-- EPS growth
-- Revenue growth
-- Debt levels
-- Profitability metrics
-
-### Backtesting
-
-AtlasTrader will eventually support testing strategies over historical data.
-
-The goal is to track:
-
-- Profit and loss
-- Win rate
-- Average winner
-- Average loser
-- Maximum drawdown
-- Fees
-- Slippage
-- Strategy metadata
-- Trade system name
-- Entry reason
-- Exit reason
-
-### Alerts and Safety
-
-Future alerting may include:
-
-- Daily reports
-- Trade entry alerts
-- Trade exit alerts
-- Broker connection warnings
-- Data feed warnings
-- Server shutdown warnings
-- Hard stop alerts
-- Trading halt alerts
+AtlasTrader does not currently place real trades, send live alerts, or connect to a broker.
 
 ## Current Status
 
-Version: 0.7.0 in progress
+Version: `0.7.0a1` in progress
 
-Current focus:
+The v0.7 focus is historical market-reading validation and structured debug reporting. The
+project has moved beyond basic candle reading and now produces layered chart-reading context
+that can be compared against real charts.
 
-- Historical market-reading validation before paper trading
-- Rolling-window reads over historical candles
-- Trend, range, support/resistance, volume, breakout, and bias summaries
-- Deterministic synthetic tests for reader behavior
-- Optional real-symbol historical read-through script
+Current market-reading/reporting support includes:
 
-### v0.2 Candle Reader
+- Candle analysis and candle context
+- Trend, range, consolidation, and congestion analysis
+- Support and resistance context
+- Volume context and breakout-volume context
+- Volatility context
+- EMA 20/50/200 context with indicator warmup for rolling historical snapshots
+- Short-term pressure and trend-condition reporting
+- Trend evidence, candidate direction, score, conflict, and blocked-reason reporting
+- Structured per-snapshot debug reports
+- Rolling historical validation over candle windows
+- CLI summary tables with `--tail`
+- Full recent snapshot JSON output with `--debug-tail`
+- Concise market-read summaries for future watchlist/notification work
+- Deterministic synthetic tests that avoid network calls
 
-The candle reader provides tested building blocks for later chart structure work.
+The final structural trend/range labels are intentionally conservative. Additional report
+fields are used to explain pullbacks, messy directional candidates, range guardrails, EMA
+context, pressure, and conflicts without promoting those fields into final trade decisions.
 
-Current candle analysis supports:
+## Project Direction
+
+AtlasTrader is being built in stages:
+
+1. Finish and clean the current market-reading/reporting foundation.
+   The system should explain what it sees before it is trusted to trade. Structured reports
+   are used to visually verify market reads against charts while keeping final trend/range
+   labels conservative.
+
+2. Repair and improve fundamentals analysis.
+   Fundamentals should help narrow the tradable universe and decide what symbols are worth
+   monitoring. It should act as a filter and context layer, not a replacement for chart
+   analysis.
+
+3. Add server/watchlist operation.
+   After fundamentals are repaired, AtlasTrader should be able to run on a local machine,
+   server, or homelab; monitor a configured watchlist or filtered symbol universe; run on
+   scheduled intervals such as daily and eventually 4H; save market-read results locally;
+   and emit watch-only reports when relevant conditions are detected.
+
+4. Add a paper trading engine.
+   Paper trading should simulate swing and position trades first, including entries, exits,
+   stop losses, targets, risk/reward, exposure, win/loss, drawdown, and performance over
+   time. Realistic assumptions for slippage, fees, and incomplete fills should be added
+   where practical.
+
+5. Add live trading later.
+   Live trading should only come after extensive paper validation, strong safety controls,
+   and broker-integration testing.
+
+6. Research day trading later.
+   The architecture should not block future intraday research, but reliable swing/position
+   workflows are the priority before day-trading support.
+
+## Roadmap
+
+- v0.1: Project setup
+- v0.2: Candle reader
+- v0.3: Trend, range, and consolidation detection
+- v0.4: Support, resistance, and volume context
+- v0.5: Multi-timeframe analysis
+- v0.6: Fundamentals reader
+- v0.7: Historical market-reading validation and structured debug reports
+- v0.8: Fundamentals repair and symbol filtering
+- v0.9: Server/watchlist runner and watch-only notifications
+- v0.10: Paper trading engine for swing/position strategies
+- v0.11+: Live trading safety layer and broker integration, only after paper validation
+- Later: Day-trading research and intraday strategy support
+
+## CLI Usage
+
+Run a historical market read for a symbol:
+
+```bash
+python scripts/run_historical_read.py --symbol AAPL --period 2y --interval 1d
+```
+
+Show recent structured snapshot summaries:
+
+```bash
+python scripts/run_historical_read.py --symbol AAPL --period 2y --interval 1d --tail 10
+```
+
+Show a concise table plus full JSON debug reports for the latest snapshots:
+
+```bash
+python scripts/run_historical_read.py \
+  --symbol NVDA \
+  --period 2y \
+  --interval 1d \
+  --tail 20 \
+  --debug-tail 5
+```
+
+Useful manual comparison commands:
+
+```bash
+python scripts/run_historical_read.py --symbol MSFT --period 2y --interval 1d --tail 20 --debug-tail 5
+python scripts/run_historical_read.py --symbol TSLA --period 2y --interval 1d --tail 20 --debug-tail 5
+python scripts/run_historical_read.py --symbol SPY --period 2y --interval 1d --tail 20 --debug-tail 5
+python scripts/run_historical_read.py --symbol KO --period 2y --interval 1d --tail 20 --debug-tail 5
+```
+
+The historical CLI may use `yfinance` to download data for local research and visual chart
+comparison. Tests use deterministic synthetic candles and should not require internet access
+or live data downloads.
+
+## Implemented Analysis Areas
+
+### Candle Reader
+
+The candle reader provides tested building blocks for chart structure work:
 
 - OHLCV candle validation
 - Candle direction
 - Candle body, range, and wick measurements
 - Candle strength classification
-- Strong bullish and strong bearish candle classification
-- Indecision candle classification
-- Long upper and lower wick detection
-- Close position classification: near high, mid-range, or near low
-- Batch candle analysis
+- Indecision and long-wick classification
+- Close-position classification
 - Previous-candle comparisons
 - Inside bar and outside bar detection
-- Rolling range context: wide, average, narrow, or unknown
+- Rolling range context
 
-### v0.3 Trend, Range, and Consolidation Detection
+### Market Structure
 
-The v0.3 reader adds tested structure detection on top of the candle reader.
-
-Current structure analysis supports:
+Current market-structure analysis supports:
 
 - Confirmed swing high and swing low detection
 - Uptrend detection from higher highs and higher lows
 - Downtrend detection from lower highs and lower lows
 - Sideways classification for mixed or weak swing structure
 - Trading range detection from repeated support and resistance touches
-- Congestion detection for tight overlapping sideways price action
+- Congestion detection for tight overlapping price action
 - Consolidation detection for bounded sideways pauses
 - Prior-window breakout direction checks
-- Immutable candle, trend, and range settings objects for tuning analysis thresholds
+- Immutable settings objects for analysis thresholds
 
-### v0.4 Support, Resistance, and Volume Context
-
-The v0.4 reader adds level detection and volume context for judging price action around
-important zones.
+### Support, Resistance, and Volume
 
 Current support/resistance and volume analysis supports:
 
 - Support and resistance detection from clustered swing lows and highs
 - Nearest support and nearest resistance lookup around the latest close
 - Level touch counts, price zones, distance from close, and confidence scores
-- Simple moving average helpers for close-price context
 - Rolling volume average
-- Relative volume classification: high, average, low, or unknown
-- Volume trend classification: rising, falling, flat, mixed, or unknown
-- Breakout volume context: confirmed, weak, absent, or unknown
+- Relative-volume classification
+- Volume-trend classification
+- Breakout-volume context
 
-### v0.5 Multi-Timeframe Analysis
-
-The v0.5 reader starts combining the existing market-reading modules across multiple
-timeframes for swing and position context.
+### Multi-Timeframe Analysis
 
 Current multi-timeframe analysis supports:
 
-- Individual timeframe summaries that compose trend, sideways/range, support/resistance,
-  and volume analysis
+- Individual timeframe summaries that compose trend, range, support/resistance, and volume
+  analysis
 - Timeframe roles for recent, primary, long-term, and supporting context
 - Default swing/position roles for 4H, 1D, and 1Y candles
-- Directional bias classification: bullish, bearish, sideways, or unknown
-- Cross-timeframe alignment classification: strong bullish, bullish, strong bearish,
-  bearish, sideways, conflicted, or unknown
-- Weighted confidence that gives higher-timeframe context more influence by default
-- Directional conflict reporting when analyzed timeframes disagree
+- Directional bias and alignment classification
+- Weighted confidence and directional conflict reporting
 
-### v0.6 Fundamentals Reader
+### Fundamentals
 
-The v0.6 reader adds a data-only fundamentals analysis layer for swing and position
-research. It classifies supplied company metrics without fetching live external data.
+The current fundamentals layer is data-only and needs repair before server/watchlist
+operation. The intended role of fundamentals is to help filter and rank symbols for
+monitoring, not to replace chart analysis.
 
-Current fundamental analysis supports:
+Existing fundamentals work includes classifications for:
 
-- Raw fundamental metric validation for one symbol
-- Growth context from annual growth, EPS growth, and revenue growth
-- Performance context from one-year and five-year performance
-- Quarterly EPS trend classification: improving, flat, declining, mixed, or unknown
-- P/E valuation context: low, fair, high, or unknown
-- Debt load classification from debt-to-equity ratio
-- Profitability classification from profit margin and return on equity
-- Overall score, data-quality ratio, and rating: strong, positive, neutral, weak,
-  or unknown
-- Immutable settings object for tuning fundamental thresholds
+- Growth and performance context
+- Quarterly EPS trend
+- P/E valuation context
+- Debt load
+- Profitability
+- Overall score, data quality, and rating
 
-### v0.7 Historical Market-Reading Validation
+### Historical Validation and Debug Reports
 
-The in-progress v0.7 reader starts historical testing as market-reading validation, not full
-profit/loss backtesting. It walks historical candles chronologically and runs the
-current readers over rolling windows to check whether AtlasTrader can describe market
-structure coherently before paper trading is added.
+The v0.7 historical reader walks historical candles chronologically and runs market readers
+over rolling windows to check whether AtlasTrader can describe market structure coherently.
+It is validation/debug infrastructure, not profit/loss backtesting.
 
 Current historical validation supports:
 
 - Rolling historical snapshots over a configurable candle lookback
-- Per-snapshot trend, sideways/range, support/resistance, volume, breakout, and bias reads
+- Separate indicator warmup history for EMA context
+- Per-snapshot trend, range, support/resistance, volume, volatility, EMA, pressure, and
+  trend-candidate reports
+- Candidate score, conflict, threshold, selected-score, and blocked-reason fields
 - Summary counts for trend direction, market type, breakout direction, and bias
-- High-relative-volume and confirmed-breakout-volume counts
+- Concise market-read summary fields for future notification work
+- Full JSON debug output for recent snapshots
 - Deterministic tests using synthetic candles
-- Optional real-data script:
 
-```bash
-python scripts/run_historical_read.py --symbol AAPL --period 2y --interval 1d
-```
+## Safety / Non-Goals
+
+AtlasTrader is not currently a live trading system.
+
+Current non-goals:
+
+- No real trade placement
+- No broker integration
+- No live execution
+- No paper trading engine yet
+- No server/watchlist runner yet
+- No email, SMS, Discord, Telegram, or other notification delivery yet
+- No buy/sell/short recommendations
+- No promises of profitability
+
+Early future alerts should be informational and watch-only. They should help review whether
+AtlasTrader's reported reads match real charts. They should not automatically place trades
+or imply financial advice.
+
+Before any live trading is considered, the project should include paper-trading validation,
+position-sizing controls, max daily/weekly loss limits, kill-switch behavior, logging,
+broker disconnect handling, and other safety controls.
 
 ## Development Setup
 
@@ -290,7 +274,7 @@ Format code:
 ruff format .
 ```
 
-Run the project:
+Run the project entry point:
 
 ```bash
 atlas-trader
@@ -304,4 +288,6 @@ python src/atlas_trader/main.py
 
 ## Disclaimer
 
-AtlasTrader is for education, research, backtesting, and paper trading. It is not financial advice. Live trading should not be attempted until the system has been thoroughly tested, reviewed, and proven in paper trading.
+AtlasTrader is for education, research, historical validation, and eventual paper trading.
+It is not financial advice. Live trading should not be attempted until the system has been
+thoroughly tested, reviewed, and validated in paper trading with strong safety controls.

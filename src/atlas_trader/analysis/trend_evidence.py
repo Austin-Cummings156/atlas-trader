@@ -30,6 +30,7 @@ class TrendFallbackReason(StrEnum):
 class TrendCandidateBlockedReason(StrEnum):
     """Reason a directional report-only candidate was blocked."""
 
+    CONFLICT_ADJUSTED_SCORE_BELOW_THRESHOLD = "conflict_adjusted_score_below_threshold"
     RANGE_MARKET_WITHOUT_BREAKOUT_EVIDENCE = "range_market_without_breakout_evidence"
 
 
@@ -80,9 +81,11 @@ class TrendEvidenceContext:
     insufficient_swing_structure: bool
     trend_candidate: TrendDirection
     trend_candidate_confidence: float
-    trend_candidate_score: int
-    trend_candidate_direction_score: int
+    trend_candidate_raw_score: int
     trend_candidate_conflict_count: int
+    trend_candidate_effective_score: int
+    trend_candidate_threshold: int
+    trend_candidate_selected_score: int
     trend_candidate_blocked_reason: TrendCandidateBlockedReason | None
     trend_candidate_raw_reasons: list[str]
     trend_candidate_reasons: list[str]
@@ -151,9 +154,11 @@ def analyze_trend_evidence(
         insufficient_swing_structure=insufficient_swing_structure,
         trend_candidate=candidate_result.candidate,
         trend_candidate_confidence=candidate_result.confidence,
-        trend_candidate_score=candidate_result.score,
-        trend_candidate_direction_score=candidate_result.direction_score,
+        trend_candidate_raw_score=candidate_result.raw_score,
         trend_candidate_conflict_count=len(candidate_result.conflicts),
+        trend_candidate_effective_score=candidate_result.effective_score,
+        trend_candidate_threshold=candidate_result.threshold,
+        trend_candidate_selected_score=candidate_result.selected_score,
         trend_candidate_blocked_reason=candidate_result.blocked_reason,
         trend_candidate_raw_reasons=candidate_result.raw_reasons,
         trend_candidate_reasons=candidate_result.reasons,
@@ -171,8 +176,10 @@ def analyze_trend_evidence(
 class _TrendCandidateResult:
     candidate: TrendDirection
     confidence: float
-    score: int
-    direction_score: int
+    raw_score: int
+    effective_score: int
+    threshold: int
+    selected_score: int
     blocked_reason: TrendCandidateBlockedReason | None
     raw_reasons: list[str]
     reasons: list[str]
@@ -220,8 +227,10 @@ def _candidate_from_evidence(
         return _TrendCandidateResult(
             candidate=TrendDirection.UNKNOWN,
             confidence=0,
-            score=0,
-            direction_score=0,
+            raw_score=0,
+            effective_score=0,
+            threshold=settings.candidate_score_threshold,
+            selected_score=0,
             blocked_reason=None,
             raw_reasons=[],
             reasons=[],
@@ -240,11 +249,18 @@ def _candidate_from_evidence(
         down_reasons=down_reasons,
     )
     direction_score = max(up_score, down_score)
-    adjusted_score = max(0, direction_score - len(conflicts))
+    effective_score = max(0, direction_score - len(conflicts))
+    threshold = _candidate_threshold(
+        leading_direction=leading_direction,
+        sideways_market=sideways_market,
+        settings=settings,
+    )
 
     blocked_reason = _blocked_reason(
         leading_direction=leading_direction,
-        adjusted_score=adjusted_score,
+        raw_score=direction_score,
+        effective_score=effective_score,
+        threshold=threshold,
         window_return_pct=window_return_pct,
         sideways_market=sideways_market,
         trend_health=trend_health,
@@ -253,32 +269,46 @@ def _candidate_from_evidence(
     if blocked_reason is not None:
         return _TrendCandidateResult(
             candidate=TrendDirection.SIDEWAYS,
-            confidence=adjusted_score / total_score,
-            score=0,
-            direction_score=direction_score,
+            confidence=effective_score / total_score,
+            raw_score=direction_score,
+            effective_score=effective_score,
+            threshold=threshold,
+            selected_score=0,
             blocked_reason=blocked_reason,
             raw_reasons=raw_reasons,
             reasons=direction_reasons,
             conflicts=conflicts,
         )
 
-    if up_score >= settings.candidate_score_threshold and up_score > down_score:
+    if (
+        leading_direction == TrendDirection.UPTREND
+        and effective_score >= threshold
+        and up_score > down_score
+    ):
         return _TrendCandidateResult(
             candidate=TrendDirection.UPTREND,
-            confidence=adjusted_score / total_score,
-            score=adjusted_score,
-            direction_score=direction_score,
+            confidence=effective_score / total_score,
+            raw_score=direction_score,
+            effective_score=effective_score,
+            threshold=threshold,
+            selected_score=effective_score,
             blocked_reason=None,
             raw_reasons=raw_reasons,
             reasons=up_reasons,
             conflicts=conflicts,
         )
-    if down_score >= settings.candidate_score_threshold and down_score > up_score:
+    if (
+        leading_direction == TrendDirection.DOWNTREND
+        and effective_score >= threshold
+        and down_score > up_score
+    ):
         return _TrendCandidateResult(
             candidate=TrendDirection.DOWNTREND,
-            confidence=adjusted_score / total_score,
-            score=adjusted_score,
-            direction_score=direction_score,
+            confidence=effective_score / total_score,
+            raw_score=direction_score,
+            effective_score=effective_score,
+            threshold=threshold,
+            selected_score=effective_score,
             blocked_reason=None,
             raw_reasons=raw_reasons,
             reasons=down_reasons,
@@ -288,8 +318,10 @@ def _candidate_from_evidence(
         return _TrendCandidateResult(
             candidate=TrendDirection.SIDEWAYS,
             confidence=0.5,
-            score=adjusted_score,
-            direction_score=direction_score,
+            raw_score=direction_score,
+            effective_score=effective_score,
+            threshold=threshold,
+            selected_score=0,
             blocked_reason=None,
             raw_reasons=raw_reasons,
             reasons=[*up_reasons, *down_reasons],
@@ -297,9 +329,11 @@ def _candidate_from_evidence(
         )
     return _TrendCandidateResult(
         candidate=TrendDirection.SIDEWAYS,
-        confidence=adjusted_score / total_score,
-        score=adjusted_score,
-        direction_score=direction_score,
+        confidence=effective_score / total_score,
+        raw_score=direction_score,
+        effective_score=effective_score,
+        threshold=threshold,
+        selected_score=0,
         blocked_reason=None,
         raw_reasons=raw_reasons,
         reasons=[*up_reasons, *down_reasons],
@@ -420,7 +454,9 @@ def _conflict_reason(reason: str) -> str:
 def _blocked_reason(
     *,
     leading_direction: TrendDirection,
-    adjusted_score: int,
+    raw_score: int,
+    effective_score: int,
+    threshold: int,
     window_return_pct: float | None,
     sideways_market: SidewaysMarketAnalysis,
     trend_health: TrendHealthContext,
@@ -428,6 +464,8 @@ def _blocked_reason(
 ) -> TrendCandidateBlockedReason | None:
     if leading_direction not in {TrendDirection.UPTREND, TrendDirection.DOWNTREND}:
         return None
+    if raw_score >= threshold and effective_score < threshold:
+        return TrendCandidateBlockedReason.CONFLICT_ADJUSTED_SCORE_BELOW_THRESHOLD
     if sideways_market.market_type not in {
         SidewaysMarketType.TRADING_RANGE,
         SidewaysMarketType.CONSOLIDATION,
@@ -441,7 +479,7 @@ def _blocked_reason(
         return None
     if _has_strong_range_market_evidence(
         leading_direction=leading_direction,
-        adjusted_score=adjusted_score,
+        effective_score=effective_score,
         window_return_pct=window_return_pct,
         trend_health=trend_health,
         settings=settings,
@@ -466,12 +504,12 @@ def _has_directional_breakout(
 def _has_strong_range_market_evidence(
     *,
     leading_direction: TrendDirection,
-    adjusted_score: int,
+    effective_score: int,
     window_return_pct: float | None,
     trend_health: TrendHealthContext,
     settings: TrendEvidenceSettings,
 ) -> bool:
-    if adjusted_score < settings.range_market_candidate_score_threshold:
+    if effective_score < settings.range_market_candidate_score_threshold:
         return False
     if window_return_pct is None:
         return False
@@ -482,6 +520,24 @@ def _has_strong_range_market_evidence(
     if leading_direction == TrendDirection.DOWNTREND:
         return trend_health.short_term_pressure == ShortTermPressure.BEARISH
     return False
+
+
+def _candidate_threshold(
+    *,
+    leading_direction: TrendDirection,
+    sideways_market: SidewaysMarketAnalysis,
+    settings: TrendEvidenceSettings,
+) -> int:
+    if leading_direction in {TrendDirection.UPTREND, TrendDirection.DOWNTREND} and (
+        sideways_market.market_type
+        in {
+            SidewaysMarketType.TRADING_RANGE,
+            SidewaysMarketType.CONSOLIDATION,
+            SidewaysMarketType.CONGESTION,
+        }
+    ):
+        return settings.range_market_candidate_score_threshold
+    return settings.candidate_score_threshold
 
 
 def _fallback_reason(
