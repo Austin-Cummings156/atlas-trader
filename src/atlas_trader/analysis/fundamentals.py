@@ -1,9 +1,10 @@
 """Fundamental analysis helpers for swing and position research."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from math import isfinite
+from typing import Any
 
 
 class FundamentalSignal(StrEnum):
@@ -94,6 +95,10 @@ class FundamentalAnalysisSettings:
 DEFAULT_FUNDAMENTAL_ANALYSIS_SETTINGS = FundamentalAnalysisSettings()
 
 
+class FundamentalDataError(RuntimeError):
+    """Raised when external fundamental data cannot be loaded."""
+
+
 @dataclass(frozen=True)
 class FundamentalMetrics:
     """Raw company-level fundamental metrics for one symbol."""
@@ -157,7 +162,7 @@ def analyze_fundamentals(
     *,
     settings: FundamentalAnalysisSettings = DEFAULT_FUNDAMENTAL_ANALYSIS_SETTINGS,
 ) -> FundamentalAnalysis:
-    """Analyze supplied fundamental metrics without fetching external data."""
+    """Analyze supplied fundamental metrics."""
     growth_signal = _combined_signal(
         [
             _classify_rate(metrics.annual_growth_rate, settings, category="growth"),
@@ -204,6 +209,53 @@ def analyze_fundamentals(
         score=score,
         data_quality=_data_quality(category_signals),
         rating=_rating_for_score(score, settings),
+    )
+
+
+def analyze_symbol_fundamentals(
+    symbol: str,
+    *,
+    settings: FundamentalAnalysisSettings = DEFAULT_FUNDAMENTAL_ANALYSIS_SETTINGS,
+    ticker_factory: Callable[[str], Any] | None = None,
+) -> FundamentalAnalysis:
+    """Fetch and analyze fundamental metrics for a symbol."""
+    return analyze_fundamentals(
+        fetch_fundamental_metrics(symbol, ticker_factory=ticker_factory),
+        settings=settings,
+    )
+
+
+def fetch_fundamental_metrics(
+    symbol: str,
+    *,
+    ticker_factory: Callable[[str], Any] | None = None,
+) -> FundamentalMetrics:
+    """Fetch company-level fundamental metrics for a symbol using yfinance."""
+    normalized_symbol = symbol.strip().upper()
+    if not normalized_symbol:
+        raise ValueError("symbol must not be blank.")
+
+    ticker = _build_ticker(normalized_symbol, ticker_factory)
+    info = _ticker_info(ticker)
+    annual_income = _ticker_frame(ticker, "financials")
+    quarterly_income = _ticker_frame(ticker, "quarterly_income_stmt")
+
+    return FundamentalMetrics(
+        symbol=normalized_symbol,
+        annual_growth_rate=_annual_revenue_growth(annual_income),
+        five_year_performance=_price_performance(ticker, period="5y"),
+        one_year_performance=_price_performance(ticker, period="1y"),
+        quarterly_eps=_quarterly_eps(quarterly_income),
+        pe_ratio=_positive_number(
+            _first_info_number(info, "trailingPE", "forwardPE"),
+        ),
+        eps_growth=_finite_number(
+            _first_info_number(info, "earningsQuarterlyGrowth", "earningsGrowth"),
+        ),
+        revenue_growth=_finite_number(info.get("revenueGrowth")),
+        debt_to_equity=_debt_to_equity(info),
+        profit_margin=_finite_number(info.get("profitMargins")),
+        return_on_equity=_finite_number(info.get("returnOnEquity")),
     )
 
 
@@ -273,6 +325,145 @@ def classify_earnings_trend(
     if all(change == FundamentalSignal.NEUTRAL for change in changes):
         return EarningsTrend.FLAT
     return EarningsTrend.MIXED
+
+
+def _build_ticker(symbol: str, ticker_factory: Callable[[str], Any] | None) -> Any:
+    if ticker_factory is not None:
+        return ticker_factory(symbol)
+
+    try:
+        import yfinance as yf
+    except ImportError as exc:
+        raise FundamentalDataError("yfinance is required to fetch fundamental data.") from exc
+
+    return yf.Ticker(symbol)
+
+
+def _ticker_info(ticker: Any) -> dict[str, Any]:
+    try:
+        info = ticker.info
+    except Exception as exc:
+        raise FundamentalDataError("Could not fetch quote summary fundamentals.") from exc
+
+    return info if isinstance(info, dict) else {}
+
+
+def _ticker_frame(ticker: Any, attribute_name: str) -> Any:
+    try:
+        return getattr(ticker, attribute_name)
+    except Exception:
+        return None
+
+
+def _annual_revenue_growth(income_statement: Any) -> float | None:
+    revenues = _statement_row_values(
+        income_statement,
+        "Total Revenue",
+        "TotalRevenue",
+        "Operating Revenue",
+    )
+    if len(revenues) < 2:
+        return None
+
+    first_revenue = revenues[0]
+    latest_revenue = revenues[-1]
+    if first_revenue <= 0:
+        return None
+
+    years = len(revenues) - 1
+    return _finite_number((latest_revenue / first_revenue) ** (1 / years) - 1)
+
+
+def _quarterly_eps(income_statement: Any) -> tuple[float, ...]:
+    eps_values = _statement_row_values(
+        income_statement,
+        "Diluted EPS",
+        "DilutedEPS",
+        "Basic EPS",
+        "BasicEPS",
+    )
+    return tuple(eps_values)
+
+
+def _statement_row_values(statement: Any, *row_names: str) -> list[float]:
+    if statement is None or getattr(statement, "empty", True):
+        return []
+
+    row_name = next((name for name in row_names if name in statement.index), None)
+    if row_name is None:
+        return []
+
+    row = statement.loc[row_name]
+    columns = sorted(statement.columns)
+    values: list[float] = []
+    for column in columns:
+        number = _finite_number(row.get(column))
+        if number is not None:
+            values.append(number)
+
+    return values
+
+
+def _price_performance(ticker: Any, *, period: str) -> float | None:
+    try:
+        history = ticker.history(period=period, interval="1d", auto_adjust=False)
+    except Exception:
+        return None
+
+    if history is None or getattr(history, "empty", True) or "Close" not in history:
+        return None
+
+    closes = [
+        close
+        for close in (_finite_number(value) for value in history["Close"].tolist())
+        if close is not None and close > 0
+    ]
+    if len(closes) < 2:
+        return None
+
+    return _finite_number((closes[-1] - closes[0]) / closes[0])
+
+
+def _first_info_number(info: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = _finite_number(info.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _debt_to_equity(info: dict[str, Any]) -> float | None:
+    debt_to_equity = _finite_number(info.get("debtToEquity"))
+    if debt_to_equity is not None:
+        return debt_to_equity / 100
+
+    total_debt = _finite_number(info.get("totalDebt"))
+    total_equity = _finite_number(info.get("bookValue"))
+    shares_outstanding = _finite_number(info.get("sharesOutstanding"))
+    if total_debt is None or total_equity is None or shares_outstanding is None:
+        return None
+
+    shareholder_equity = total_equity * shares_outstanding
+    if shareholder_equity <= 0:
+        return None
+    return _finite_number(total_debt / shareholder_equity)
+
+
+def _positive_number(value: Any) -> float | None:
+    number = _finite_number(value)
+    if number is None or number <= 0:
+        return None
+    return number
+
+
+def _finite_number(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if isfinite(number) else None
 
 
 def _validate_optional_finite(value: float | None, name: str) -> None:

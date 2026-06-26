@@ -2,6 +2,7 @@
 
 import math
 
+import pandas as pd
 import pytest
 
 import atlas_trader.analysis as analysis_api
@@ -13,18 +14,82 @@ from atlas_trader.analysis.fundamentals import (
     FundamentalSignal,
     ValuationLevel,
     analyze_fundamentals,
+    analyze_symbol_fundamentals,
     classify_debt,
     classify_earnings_trend,
     classify_profitability,
     classify_valuation,
+    fetch_fundamental_metrics,
 )
+
+
+class FakeTicker:
+    info = {
+        "trailingPE": 22.0,
+        "earningsQuarterlyGrowth": 0.16,
+        "revenueGrowth": 0.10,
+        "debtToEquity": 70.0,
+        "profitMargins": 0.22,
+        "returnOnEquity": 0.35,
+    }
+    financials = pd.DataFrame(
+        {
+            pd.Timestamp("2021-12-31"): [100.0],
+            pd.Timestamp("2022-12-31"): [116.0],
+            pd.Timestamp("2023-12-31"): [135.0],
+        },
+        index=["Total Revenue"],
+    )
+    quarterly_income_stmt = pd.DataFrame(
+        {
+            pd.Timestamp("2023-03-31"): [1.00],
+            pd.Timestamp("2023-06-30"): [1.08],
+            pd.Timestamp("2023-09-30"): [1.20],
+            pd.Timestamp("2023-12-31"): [1.35],
+        },
+        index=["Diluted EPS"],
+    )
+
+    def history(self, *, period: str, interval: str, auto_adjust: bool) -> pd.DataFrame:
+        if period == "5y":
+            closes = [100.0, 180.0]
+        else:
+            closes = [100.0, 125.0]
+
+        return pd.DataFrame({"Close": closes})
 
 
 def test_fundamental_api_is_exposed_from_analysis_package() -> None:
     assert analysis_api.FundamentalMetrics is FundamentalMetrics
     assert analysis_api.FundamentalAnalysisSettings is FundamentalAnalysisSettings
     assert analysis_api.analyze_fundamentals is analyze_fundamentals
+    assert analysis_api.analyze_symbol_fundamentals is analyze_symbol_fundamentals
+    assert analysis_api.fetch_fundamental_metrics is fetch_fundamental_metrics
     assert analysis_api.FundamentalRating is FundamentalRating
+
+
+def test_fetch_fundamental_metrics_loads_provider_data() -> None:
+    metrics = fetch_fundamental_metrics(" aapl ", ticker_factory=lambda symbol: FakeTicker())
+
+    assert metrics.symbol == "AAPL"
+    assert metrics.annual_growth_rate == pytest.approx(0.1619, abs=0.0001)
+    assert metrics.five_year_performance == pytest.approx(0.80)
+    assert metrics.one_year_performance == pytest.approx(0.25)
+    assert metrics.quarterly_eps == pytest.approx((1.00, 1.08, 1.20, 1.35))
+    assert metrics.pe_ratio == pytest.approx(22)
+    assert metrics.eps_growth == pytest.approx(0.16)
+    assert metrics.revenue_growth == pytest.approx(0.10)
+    assert metrics.debt_to_equity == pytest.approx(0.70)
+    assert metrics.profit_margin == pytest.approx(0.22)
+    assert metrics.return_on_equity == pytest.approx(0.35)
+
+
+def test_analyze_symbol_fundamentals_fetches_and_scores_provider_data() -> None:
+    analysis = analyze_symbol_fundamentals("AAPL", ticker_factory=lambda symbol: FakeTicker())
+
+    assert analysis.symbol == "AAPL"
+    assert analysis.rating == FundamentalRating.STRONG
+    assert analysis.data_quality == pytest.approx(1)
 
 
 def test_analyze_fundamentals_rates_strong_company_context() -> None:

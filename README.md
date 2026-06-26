@@ -114,6 +114,24 @@ python scripts/run_historical_read.py \
   --debug-tail 5
 ```
 
+Run one current watchlist read over the default swing/position timeframes:
+
+```bash
+python scripts/run_watchlist_server.py --symbols AAPL,MSFT,NVDA,SPY --once
+```
+
+The watchlist server fetches `4h`, `1d`, and `1wk` candles, runs multi-timeframe trend
+analysis, and writes JSON, CSV, and PDF review files under `runtime/watchlist/`.
+
+Run it in the background on a server:
+
+```bash
+nohup python scripts/run_watchlist_server.py \
+  --symbols AAPL,MSFT,NVDA,SPY \
+  --poll-seconds 14400 \
+  > runtime/watchlist/server.log 2>&1 &
+```
+
 Useful manual comparison commands:
 
 ```bash
@@ -176,18 +194,19 @@ Current multi-timeframe analysis supports:
 - Individual timeframe summaries that compose trend, range, support/resistance, and volume
   analysis
 - Timeframe roles for recent, primary, long-term, and supporting context
-- Default swing/position roles for 4H, 1D, and 1Y candles
+- Default swing/position roles for 4H, 1D, and 1W candles
 - Directional bias and alignment classification
 - Weighted confidence and directional conflict reporting
 
 ### Fundamentals
 
-The current fundamentals layer is data-only and needs repair before server/watchlist
-operation. The intended role of fundamentals is to help filter and rank symbols for
-monitoring, not to replace chart analysis.
+The fundamentals layer can fetch company metrics through `yfinance` and analyze supplied
+metrics directly for deterministic testing. The intended role of fundamentals is to help
+filter and rank symbols for monitoring, not to replace chart analysis.
 
 Existing fundamentals work includes classifications for:
 
+- Bot-managed data gathering for symbol-level fundamental metrics
 - Growth and performance context
 - Quarterly EPS trend
 - P/E valuation context
